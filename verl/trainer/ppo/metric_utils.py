@@ -127,6 +127,23 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             torch.min(prompt_length).detach().item(),
         'prompt_length/clip_ratio':
             torch.mean(torch.eq(prompt_length, max_prompt_length).float()).detach().item(),
+        # episode
+        'episode/reward/mean': 
+            batch.non_tensor_batch['episode_rewards_mean'][0].item(),
+        'episode/reward/max': 
+            batch.non_tensor_batch['episode_rewards_max'][0].item(),
+        'episode/reward/min': 
+            batch.non_tensor_batch['episode_rewards_min'][0].item(),
+        'episode/length/mean': 
+            batch.non_tensor_batch['episode_lengths_mean'][0].item(),
+        'episode/length/max':
+            batch.non_tensor_batch['episode_lengths_max'][0].item(),
+        'episode/length/min': 
+            batch.non_tensor_batch['episode_lengths_min'][0].item(),
+        **({f'episode/{k}': v[0].item() for k, v in batch.non_tensor_batch.items() if 'success_rate' in k}),
+        # valid action ratio
+        'valid_action_ratio':
+            np.mean(batch.non_tensor_batch['is_action_valid']).item(),
     }
     return metrics
 
