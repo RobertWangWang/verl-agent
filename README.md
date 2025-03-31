@@ -73,10 +73,7 @@ verl is fast with:
 ```bash
 conda create -n verl python==3.12
 conda activate verl
-pip3 install -e ./agent_system/environments/gym_cards/gym-cards/
-pip3 install gymnasium==0.29.1
-pip3 install stable-baselines3==2.4.0
-pip3 install flash-attn==2.7.4.post1 --no-build-isolation
+pip3 install flash-attn --no-build-isolation
 pip3 install -e .
 pip3 uninstall torch
 pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121

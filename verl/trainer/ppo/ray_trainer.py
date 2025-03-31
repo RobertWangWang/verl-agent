@@ -44,7 +44,7 @@ from verl.utils.tracking import ValidationGenerationsLogger
 from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 
-from agent_system.multi_turn_rollout import traj_collect_loop
+from agent_system.multi_turn_rollout import TrajectoryCollector
 
 WorkerType = Type[Worker]
 
@@ -264,6 +264,7 @@ class RayPPOTrainer(object):
                  role_worker_mapping: dict[Role, WorkerType],
                  resource_pool_manager: ResourcePoolManager,
                  ray_worker_group_cls: RayWorkerGroup = RayWorkerGroup,
+                 traj_collector: TrajectoryCollector = None,
                  processor=None,
                  reward_fn=None,
                  val_reward_fn=None,
@@ -280,6 +281,7 @@ class RayPPOTrainer(object):
         self.val_reward_fn = val_reward_fn
         self.envs = envs
         self.val_envs = val_envs
+        self.traj_collector = traj_collector
 
         self.hybrid_engine = config.actor_rollout_ref.hybrid_engine
         assert self.hybrid_engine, 'Currently, only support hybrid engine'
@@ -560,11 +562,10 @@ class RayPPOTrainer(object):
             # # pad to be divisible by dp_size
             # test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
             # test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
-            test_output_gen_batch = traj_collect_loop(gen_batch=test_gen_batch,
+            test_output_gen_batch = self.traj_collector.multi_turn_loop(
+                                                    gen_batch=test_gen_batch,
                                                     actor_rollout_wg=self.actor_rollout_wg,
                                                     envs=self.val_envs,
-                                                    tokenizer=self.tokenizer,
-                                                    processor=self.processor,
                                                     config=self.config,
                                                     )
             # # unpad
@@ -867,11 +868,10 @@ class RayPPOTrainer(object):
                         # gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
 
                         ################ agent loop ###############
-                        gen_batch_output = traj_collect_loop(gen_batch=gen_batch,
+                        gen_batch_output = self.traj_collector.multi_turn_loop(
+                                                                gen_batch=gen_batch,
                                                                 actor_rollout_wg=self.actor_rollout_wg,
                                                                 envs=self.envs,
-                                                                tokenizer=self.tokenizer,
-                                                                processor=self.processor,
                                                                 config=self.config,
                                                                 )
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:

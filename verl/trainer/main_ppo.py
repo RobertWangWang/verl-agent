@@ -132,12 +132,16 @@ class TaskRunner:
         from agent_system.environments import make_envs
         envs, val_envs = make_envs(config)
 
+        from agent_system.multi_turn_rollout import TrajectoryCollector
+        traj_collector = TrajectoryCollector(tokenizer=tokenizer, processor=processor)
+        
         trainer = RayPPOTrainer(config=config,
                                 tokenizer=tokenizer,
                                 processor=processor,
                                 role_worker_mapping=role_worker_mapping,
                                 resource_pool_manager=resource_pool_manager,
                                 ray_worker_group_cls=ray_worker_group_cls,
+                                traj_collector=traj_collector,
                                 reward_fn=reward_fn,
                                 val_reward_fn=val_reward_fn,
                                 envs=envs,
