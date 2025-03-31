@@ -12,7 +12,7 @@ def to_numpy(tensor):
     if isinstance(tensor, torch.Tensor):
         tensor = tensor.detach().cpu().numpy()
     elif isinstance(tensor, np.ndarray):
-        tensor = tensor
+        pass
     elif isinstance(tensor, (int, float, bool, Tuple, List)):
         tensor = np.array(tensor)
     else:
@@ -124,7 +124,7 @@ class EnvironmentManagerBase:
         if isinstance(image, torch.Tensor):
             image = image.detach().cpu().numpy()
         if isinstance(image, np.ndarray):
-            image = image
+            pass
         else:
             raise ValueError(f"Unsupported type: {type(image)})")
         
@@ -276,37 +276,46 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         total_infos = kwargs['total_infos']
         total_batch_list = kwargs['total_batch_list']
         batch_size = len(total_batch_list)
-
+        
         success = defaultdict(list)
-
+        
         for bs in range(batch_size):
-            # 从最后一个 step 往前找，有 active_masks 的第一个
-            for i in reversed(range(len(total_batch_list[bs]))):
-                if total_batch_list[bs][i]['active_masks']:
-                    won_value = float(total_infos[bs][i]['won'])
-                    success['main'].append(won_value)
-
-                    gamefile = total_infos[bs][i].get("extra.gamefile")
-                    if gamefile:
-                        for task in [
-                            "pick_and_place",
-                            "pick_two_obj_and_place",
-                            "look_at_obj_in_light",
-                            "pick_heat_then_place_in_recep",
-                            "pick_cool_then_place_in_recep",
-                            "pick_clean_then_place_in_recep",
-                        ]:
-                            if task in gamefile:
-                                success[task].append(won_value)
-                                break
-                    break
-
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
         assert len(success['main']) == batch_size
+        
+        # Convert lists to numpy arrays
+        return {key: np.array(value) for key, value in success.items()}
 
-        for key in success:
-            success[key] = np.array(success[key])
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        # Find the last entry with active masks
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                won_value = float(info['won'])
+                success['main'].append(won_value)
+                
+                # Process game file if it exists
+                gamefile = info.get("extra.gamefile")
+                if gamefile:
+                    self._process_gamefile(gamefile, won_value, success)
+                return  # Exit after finding the first active mask
 
-        return dict(success)
+    def _process_gamefile(self, gamefile, won_value, success):
+        tasks = [
+            "pick_and_place",
+            "pick_two_obj_and_place",
+            "look_at_obj_in_light",
+            "pick_heat_then_place_in_recep",
+            "pick_cool_then_place_in_recep",
+            "pick_clean_then_place_in_recep",
+        ]
+        
+        for task in tasks:
+            if task in gamefile:
+                success[task].append(won_value)
+                break
 
 def make_envs(config):
     """
