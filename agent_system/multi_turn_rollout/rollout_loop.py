@@ -249,7 +249,7 @@ def gather_rollout_data(total_batch_list: List[List[Dict]],
     for key, value in success.items():
         success_rate[f"{key}_success_rate"] = np.mean(value)
     
-    effective_batch = list()
+    effective_batch = []
     for bs in range(batch_size):
         # sum the rewards for each data in total_batch_list[bs]
         for data in total_batch_list[bs]:
@@ -324,8 +324,8 @@ def traj_collect_loop(gen_batch: DataProto, actor_rollout_wg, envs: EnvironmentM
     uid_batch = np.array([uid for _ in range(len(gen_batch.batch))], dtype=object)
     is_done = np.zeros(batch_size, dtype=bool)
     traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
-    total_batch_list = [list() for _ in range(batch_size)]
-    total_infos = [list() for _ in range(batch_size)]
+    total_batch_list = [[] for _ in range(batch_size)]
+    total_infos = [[] for _ in range(batch_size)]
     episode_lengths = np.zeros(batch_size, dtype=np.int32)
     episode_rewards = np.zeros(batch_size, dtype=np.float32)
     # Trajectory collection loop

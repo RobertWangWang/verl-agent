@@ -10,7 +10,7 @@ def to_list_of_dict(batch: DataProto) -> list[dict]:
     tensors = batch.batch
     non_tensor = batch.non_tensor_batch
     batch_size = len(tensors['input_ids'])
-    save_list = list()
+    save_list = []
     for bs in range(batch_size):
         save_dict = dict()
         for key, val in tensors.items():
@@ -25,7 +25,7 @@ def torch_to_numpy(tensor, is_object=False):
     if isinstance(tensor, torch.Tensor):
         tensor = tensor.detach().cpu().numpy()
     elif isinstance(tensor, np.ndarray):
-        tensor = tensor
+        pass
     else:
         raise ValueError(f"Unsupported type: {type(tensor)})")
 

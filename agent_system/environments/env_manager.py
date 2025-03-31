@@ -1,4 +1,5 @@
 from typing import List, Tuple, Dict, Union, Any
+from collections import defaultdict
 import torch
 import numpy as np
 from functools import partial
@@ -276,48 +277,36 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         total_batch_list = kwargs['total_batch_list']
         batch_size = len(total_batch_list)
 
-
-        success = {"main": [],}
+        success = defaultdict(list)
 
         for bs in range(batch_size):
-            # Iterate in reverse to find the last True active_masks
+            # 从最后一个 step 往前找，有 active_masks 的第一个
             for i in reversed(range(len(total_batch_list[bs]))):
                 if total_batch_list[bs][i]['active_masks']:
-                    success['main'].append(float(total_infos[bs][i]['won']))
-                    if total_infos[bs][i]["extra.gamefile"] is not None:
-                        if "pick_and_place" in total_infos[bs][i]["extra.gamefile"]:
-                            if "pick_and_place" not in success:
-                                success["pick_and_place"] = []
-                            success["pick_and_place"].append(float(total_infos[bs][i]['won']))
-                        elif "pick_two_obj_and_place" in total_infos[bs][i]["extra.gamefile"]:
-                            if "pick_two_obj_and_place" not in success:
-                                success["pick_two_obj_and_place"] = []
-                            success["pick_two_obj_and_place"].append(float(total_infos[bs][i]['won']))
-                        elif "look_at_obj_in_light" in total_infos[bs][i]["extra.gamefile"]:
-                            if "look_at_obj_in_light" not in success:
-                                success["look_at_obj_in_light"] = []
-                            success["look_at_obj_in_light"].append(float(total_infos[bs][i]['won']))
-                        elif "pick_heat_then_place_in_recep" in total_infos[bs][i]["extra.gamefile"]:
-                            if "pick_heat_then_place_in_recep" not in success:
-                                success["pick_heat_then_place_in_recep"] = []
-                            success["pick_heat_then_place_in_recep"].append(float(total_infos[bs][i]['won']))
-                        elif "pick_cool_then_place_in_recep" in total_infos[bs][i]["extra.gamefile"]:
-                            if "pick_cool_then_place_in_recep" not in success:
-                                success["pick_cool_then_place_in_recep"] = []
-                            success["pick_cool_then_place_in_recep"].append(float(total_infos[bs][i]['won']))
-                        elif "pick_clean_then_place_in_recep" in total_infos[bs][i]["extra.gamefile"]:
-                            if "pick_clean_then_place_in_recep" not in success:
-                                success["pick_clean_then_place_in_recep"] = []
-                            success["pick_clean_then_place_in_recep"].append(float(total_infos[bs][i]['won']))
+                    won_value = float(total_infos[bs][i]['won'])
+                    success['main'].append(won_value)
+
+                    gamefile = total_infos[bs][i].get("extra.gamefile")
+                    if gamefile:
+                        for task in [
+                            "pick_and_place",
+                            "pick_two_obj_and_place",
+                            "look_at_obj_in_light",
+                            "pick_heat_then_place_in_recep",
+                            "pick_cool_then_place_in_recep",
+                            "pick_clean_then_place_in_recep",
+                        ]:
+                            if task in gamefile:
+                                success[task].append(won_value)
+                                break
                     break
-        
+
         assert len(success['main']) == batch_size
-        # assert sum([len(success[key]) for key in success.keys()]) == batch_size * 2
-        for key in success.keys():
+
+        for key in success:
             success[key] = np.array(success[key])
-        return success
 
-
+        return dict(success)
 
 def make_envs(config):
     """
