@@ -158,5 +158,4 @@ disable = [
     "wildcard-import",
     "wrong-import-order",
     "wrong-import-position",
-    "self-assigning-variable",
 ]

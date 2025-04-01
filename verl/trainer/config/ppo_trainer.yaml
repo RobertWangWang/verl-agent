@@ -106,6 +106,7 @@ actor_rollout_ref:
       do_sample: False # default eager for validation
 
 critic:
+  rollout_n: ${actor_rollout_ref.rollout.n}
   strategy: fsdp
   optim:
     lr: 1e-5
@@ -180,10 +181,13 @@ algorithm:
   gamma: 1.0
   lam: 1.0
   adv_estimator: gae
+  use_kl_in_reward: False
   kl_penalty: kl  # how to estimate kl divergence
   kl_ctrl:
     type: fixed
     kl_coef: 0.001
+    horizon: 10000
+    target_kl: 0.1
 
 trainer:
   balance_batch: True
@@ -199,6 +203,7 @@ trainer:
   # auto: find the last ckpt to resume. If can't find, start from scratch
   resume_mode: auto # or disable or resume_path if resume_from_path is set
   resume_from_path: null
+  val_before_train: True
   test_freq: -1
   critic_warmup: 0
   default_hdfs_dir: null
