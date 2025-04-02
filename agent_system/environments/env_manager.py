@@ -191,7 +191,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         text_obs, image_obs, infos = self.envs.reset()
         self.gamefile = infos['extra.gamefile']
         # initialize the history buffer
-        if self.buffers is None:
+        if self.buffers is not None:
             del self.buffers
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = []
