@@ -1,21 +1,21 @@
-accelerate==1.5.2
+# requirements.txt records the full set of dependencies for development
+accelerate
 codetiming
 datasets
-flash-attn>=2.4.3
+dill
+flash-attn
+hydra-core
 liger-kernel
-mathruler
 numpy
-omegaconf
 pandas
 peft
-pillow
-pyarrow==19.0.1
+pyarrow>=15.0.0
+pybind11
 pylatexenc
-qwen-vl-utils
-ray==2.44.0
-tensordict
+pylint==3.3.6
+ray[default]
+tensordict<=0.6.2
 torchdata
-transformers==4.50.0
-vllm==0.8.1
+transformers
+# vllm==0.6.3.post1
 wandb
-hydra-core

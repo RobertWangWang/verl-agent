@@ -20,7 +20,7 @@ def alfworld_projection(actions: List[str], action_pools: List[List[str]]):
         else:
             try:
                 index = actions[i].find('"action":')
-                # string has the following format '"action": "look"\n}'
+                # string has the following format '"action": "look"\n'
                 if index == -1:
                     # if we cannot find "action":, then we pick the last 30 characters
                     string = actions[i][-30:]

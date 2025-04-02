@@ -1,17 +1,16 @@
 from typing import List, Tuple, Dict, Union, Any
+from collections import defaultdict
 import torch
 import numpy as np
 from functools import partial
 import os
-from .env_package.alfworld.alfworld.agents.utils.misc import get_templated_task_desc
-from .env_package.alfworld.envs import AlfworldEnvs
-from .prompts import ALFWORLD_INIT_TEXT_OBS, ALFWORLD_TEXT_OBS
+from agent_system.environments.prompts import ALFWORLD_INIT_TEXT_OBS, ALFWORLD_TEXT_OBS
 
 def to_numpy(tensor):
     if isinstance(tensor, torch.Tensor):
         tensor = tensor.detach().cpu().numpy()
     elif isinstance(tensor, np.ndarray):
-        tensor = tensor
+        pass
     elif isinstance(tensor, (int, float, bool, Tuple, List)):
         tensor = np.array(tensor)
     else:
@@ -98,7 +97,7 @@ class EnvironmentManagerBase:
         """
         self.envs.close()
 
-    def success_evaluator(self, *args, **kwargs):
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """
         Evaluate if the episodes are successful or not. 
         (Default) implementation is to check if the total rewards are greater than 0.
@@ -123,7 +122,7 @@ class EnvironmentManagerBase:
         if isinstance(image, torch.Tensor):
             image = image.detach().cpu().numpy()
         if isinstance(image, np.ndarray):
-            image = image
+            pass
         else:
             raise ValueError(f"Unsupported type: {type(image)})")
         
@@ -164,10 +163,10 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
 
         return next_observations, rewards, dones, infos
     
-    def success_evaluator(self, *args, **kwargs):
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         episode_rewards = kwargs['episode_rewards']
         success = episode_rewards > 0
-        return success
+        return {'main': success}
 
     
     def build_text_obs(self, infos: Tuple[Dict]) -> List[str]:
@@ -184,13 +183,16 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
 
 
 class AlfWorldEnvironmentManager(EnvironmentManagerBase):
-    def __init__(self, envs: AlfworldEnvs, projection_f, env_name):
+    def __init__(self, envs, projection_f, env_name):
+        self.buffers = None
         super().__init__(envs, projection_f, env_name)
     
     def reset(self):
         text_obs, image_obs, infos = self.envs.reset()
-
+        self.gamefile = infos['extra.gamefile']
         # initialize the history buffer
+        if self.buffers is not None:
+            del self.buffers
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = []
         self.extract_task(text_obs)
@@ -211,19 +213,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
-        rewards = self.invalid_action_penalty(rewards, valids)
-    
         next_obs = {'text': text_obs, 'image': image_obs}
         dones = to_numpy(dones)
 
         return next_obs, rewards, dones, infos
     
-    def invalid_action_penalty(self, rewards, valids):
-        for i, valid in enumerate(valids):
-            if not valid:
-                rewards[i] -= 0.1
-        return rewards
-     
     def extract_task(self, text_obs: List[str]):
         for obs in text_obs:
             task_start = obs.find('Your task is to: ')
@@ -276,26 +270,50 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(actions)):
             self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
 
-    def success_evaluator(self, *args, **kwargs):
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         total_infos = kwargs['total_infos']
         total_batch_list = kwargs['total_batch_list']
         batch_size = len(total_batch_list)
+        
+        success = defaultdict(list)
+        
+        for bs in range(batch_size):
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
+        assert len(success['main']) == batch_size
+        
+        # Convert lists to numpy arrays
+        return {key: np.array(value) for key, value in success.items()}
 
-        # print("~~len(total_infos): ", len(total_infos))
-        # print("~~len(total_infos[0]): ", len(total_infos[0]))
-        # print("~~total_infos[0]: ", total_infos[0])
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        # Find the last entry with active masks
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                won_value = float(info['won'])
+                success['main'].append(won_value)
+                
+                # Process game file if it exists
+                gamefile = info.get("extra.gamefile", self.gamefile)
+                if gamefile:
+                    self._process_gamefile(gamefile, won_value, success)
+                return  # Exit after finding the first active mask
 
-        success = [None] * batch_size
-
-        for bs in range(batch_size):   
-            for i, data in enumerate(total_batch_list[bs]):
-                if data['active_masks']:
-                    success[bs] = total_infos[bs][i]['won']
-                else:
-                    break
-        return success
-
-
+    def _process_gamefile(self, gamefile, won_value, success):
+        tasks = [
+            "pick_and_place",
+            "pick_two_obj_and_place",
+            "look_at_obj_in_light",
+            "pick_heat_then_place_in_recep",
+            "pick_cool_then_place_in_recep",
+            "pick_clean_then_place_in_recep",
+        ]
+        
+        for task in tasks:
+            if task in gamefile:
+                success[task].append(won_value)
+                break
 
 def make_envs(config):
     """

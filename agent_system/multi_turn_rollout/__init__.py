@@ -1,1 +1,1 @@
-from .rollout_loop import traj_collect_loop
+from .rollout_loop import TrajectoryCollector
