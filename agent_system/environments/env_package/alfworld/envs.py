@@ -1,15 +1,11 @@
 import os
 import yaml
 import torchvision.transforms as T
-from alfworld.agents.environment.alfred_thor_env import AlfredThorEnv
 import gymnasium as gym
 from gymnasium import spaces
 from alfworld.agents.environment import get_environment
-from typing import Optional
 import numpy as np
 import torch
-import random
-
 
 ALF_ACTION_LIST=["pass", "goto", "pick", "put", "open", "close", "toggle", "heat", "clean", "cool", "slice", "inventory", "examine", "look"]
 # ALF_ITEM_LIST =

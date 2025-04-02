@@ -4,9 +4,7 @@ import torch
 import numpy as np
 from functools import partial
 import os
-from .env_package.alfworld.alfworld.agents.utils.misc import get_templated_task_desc
-from .env_package.alfworld.envs import AlfworldEnvs
-from .prompts import ALFWORLD_INIT_TEXT_OBS, ALFWORLD_TEXT_OBS
+from agent_system.environments.prompts import ALFWORLD_INIT_TEXT_OBS, ALFWORLD_TEXT_OBS
 
 def to_numpy(tensor):
     if isinstance(tensor, torch.Tensor):
@@ -185,13 +183,13 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
 
 
 class AlfWorldEnvironmentManager(EnvironmentManagerBase):
-    def __init__(self, envs: AlfworldEnvs, projection_f, env_name):
+    def __init__(self, envs, projection_f, env_name):
         self.buffers = None
         super().__init__(envs, projection_f, env_name)
     
     def reset(self):
         text_obs, image_obs, infos = self.envs.reset()
-
+        self.gamefile = infos['extra.gamefile']
         # initialize the history buffer
         if self.buffers is None:
             del self.buffers
@@ -297,7 +295,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 success['main'].append(won_value)
                 
                 # Process game file if it exists
-                gamefile = info.get("extra.gamefile")
+                gamefile = info.get("extra.gamefile", self.gamefile)
                 if gamefile:
                     self._process_gamefile(gamefile, won_value, success)
                 return  # Exit after finding the first active mask

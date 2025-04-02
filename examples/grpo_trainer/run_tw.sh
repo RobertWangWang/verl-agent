@@ -1,14 +1,14 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=1,3,4,5
+export CUDA_VISIBLE_DEVICES=3,4,5,6
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/alfworld/tw/zero_shot/train.parquet \
     data.val_files=$HOME/data/alfworld/tw/zero_shot/test.parquet \
     data.train_batch_size=32 \
-    data.val_batch_size=64 \
+    data.val_batch_size=32 \
     data.max_prompt_length=2048 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
@@ -49,4 +49,4 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=10 \
-    trainer.total_epochs=2000 $@
+    trainer.total_epochs=100 $@
