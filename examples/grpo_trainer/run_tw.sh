@@ -1,7 +1,7 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=3,4,5,6
+export CUDA_VISIBLE_DEVICES=0,1,2,3
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
@@ -10,7 +10,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=32 \
     data.val_batch_size=32 \
     data.max_prompt_length=2048 \
-    data.max_response_length=1024 \
+    data.max_response_length=2048 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
@@ -47,6 +47,6 @@ python3 -m verl.trainer.main_ppo \
     trainer.experiment_name='zeroshot_qwen_2_5_3b_grpo' \
     trainer.n_gpus_per_node=4 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=10 \
     trainer.test_freq=10 \
     trainer.total_epochs=100 $@
