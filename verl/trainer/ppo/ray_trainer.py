@@ -598,14 +598,14 @@ class RayPPOTrainer(object):
             data_source_lst.append(test_batch.non_tensor_batch.get('data_source', ['unknown'] * reward_tensor.shape[0]))
 
             # success rate
-            if len(success_rate_dict) == 0:
-                success_rate_dict = {k: [] for k in test_batch.non_tensor_batch.keys() if 'success_rate' in k}
-            
-            for k in success_rate_dict.keys():
-                success_rate_dict[k].append(test_batch.non_tensor_batch[k][0])
-                # all success_rate should be the same
-                for i in range(1, len(test_batch.non_tensor_batch[k])):
-                    assert test_batch.non_tensor_batch[k][0] == test_batch.non_tensor_batch[k][i], f'not all success_rate are the same, 0: {test_batch.non_tensor_batch[k][0]}, {i}: {test_batch.non_tensor_batch[k][i]}'
+            for k in test_batch.non_tensor_batch.keys():
+                if 'success_rate' in k:
+                    if k not in success_rate_dict:
+                        success_rate_dict[k] = []
+                    success_rate_dict[k].append(test_batch.non_tensor_batch[k][0])
+                    # all success_rate should be the same
+                    for i in range(1, len(test_batch.non_tensor_batch[k])):
+                        assert test_batch.non_tensor_batch[k][0] == test_batch.non_tensor_batch[k][i], f'not all success_rate are the same, 0: {test_batch.non_tensor_batch[k][0]}, {i}: {test_batch.non_tensor_batch[k][i]}'
 
         self._maybe_log_val_generations(inputs=sample_inputs, outputs=sample_outputs, scores=sample_scores)
 

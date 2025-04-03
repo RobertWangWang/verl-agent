@@ -206,6 +206,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.save_to_history_buffer(actions, text_obs)
 
         text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
+        if infos.get("extra.gamefile")[0] is None:
+            infos['extra.gamefile'] = self.gamefile
 
         infos = parse_infos(infos)
 
@@ -295,7 +297,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 success['main'].append(won_value)
                 
                 # Process game file if it exists
-                gamefile = info.get("extra.gamefile", self.gamefile)
+                gamefile = info.get("extra.gamefile")
                 if gamefile:
                     self._process_gamefile(gamefile, won_value, success)
                 return  # Exit after finding the first active mask
@@ -323,7 +325,7 @@ def make_envs(config):
     val_num_processes = config.data.val_batch_size * config.env.rollout.n
     
     if "gym_cards" in config.env.env_name.lower():
-        from agent_system.environments.env_package import build_gymcards_envs, gym_projection
+        from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
         _envs = build_gymcards_envs(config.env.env_name, config.env.seed, train_num_processes,
                              config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, val_num_processes,
@@ -334,7 +336,7 @@ def make_envs(config):
         val_envs = GymCardEnvironmentManager(_val_envs, projection_f, config.env.env_name)
         return envs, val_envs
     elif "alfworld" in config.env.env_name.lower():
-        from agent_system.environments.env_package import build_alfworld_envs, alfworld_projection
+        from agent_system.environments.env_package.alfworld import build_alfworld_envs, alfworld_projection
         if config.env.env_name == 'alfworld/AlfredThorEnv':
             alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         elif config.env.env_name == 'alfworld/AlfredTWEnv':
@@ -357,7 +359,7 @@ if __name__ == "__main__":
     env_name = "alfworld"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
-        from agent_system.environments.env_package import build_gymcards_envs, gym_projection
+        from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
         envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, 4, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
         env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
@@ -369,8 +371,8 @@ if __name__ == "__main__":
         print("completed")
     elif env_name == "alfworld":
         # Test AlfWorldEnvironmentManager
-        from agent_system.environments.env_package import alfworld_projection
-        from agent_system.environments.env_package import build_alfworld_envs
+        from agent_system.environments.env_package.alfworld import alfworld_projection
+        from agent_system.environments.env_package.alfworld import build_alfworld_envs
         import time
         alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         envs = build_alfworld_envs(alf_config_path, 1, 2)
