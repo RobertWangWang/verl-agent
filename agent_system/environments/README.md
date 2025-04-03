@@ -20,9 +20,10 @@ pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url http
 
 ## ALFWorld
 Install with pip (python3.10+):
-
+```bash
 pip3 install gymnasium==1.1.1
 pip3 install stable-baselines3==2.6.0
+```
 
 ```bash
 pip install alfworld[full]
