@@ -359,7 +359,7 @@ if __name__ == "__main__":
     env_name = "alfworld"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
-        from agent_system.environments.env_package import build_gymcards_envs, gym_projection
+        from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
         envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, 4, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
         env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
@@ -371,8 +371,8 @@ if __name__ == "__main__":
         print("completed")
     elif env_name == "alfworld":
         # Test AlfWorldEnvironmentManager
-        from agent_system.environments.env_package import alfworld_projection
-        from agent_system.environments.env_package import build_alfworld_envs
+        from agent_system.environments.env_package.alfworld import alfworld_projection
+        from agent_system.environments.env_package.alfworld import build_alfworld_envs
         import time
         alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         envs = build_alfworld_envs(alf_config_path, 1, 2)
