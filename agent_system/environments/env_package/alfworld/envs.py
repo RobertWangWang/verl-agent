@@ -1,11 +1,13 @@
 import os
 import yaml
-import torchvision.transforms as T
 import gymnasium as gym
 from gymnasium import spaces
-from alfworld.agents.environment import get_environment
 import numpy as np
 import torch
+import torch.multiprocessing as mp
+import torchvision.transforms as T
+
+from alfworld.agents.environment import get_environment
 
 ALF_ACTION_LIST=["pass", "goto", "pick", "put", "open", "close", "toggle", "heat", "clean", "cool", "slice", "inventory", "examine", "look"]
 # ALF_ITEM_LIST =
@@ -28,84 +30,170 @@ def get_obs_image(env):
     image_tensors = torch.stack(image_tensors, dim=0)
     return image_tensors
 
+def compute_reward(info, multi_modal=False):
+    if multi_modal:
+        reward = 10.0 * float(info['won']) + float(info['goal_condition_success_rate'])
+    else:
+        reward = 10.0 * float(info['won'])
+    return reward
+
+def worker_func(remote, config, seed, base_env):
+    """
+    Core loop of the subprocess:
+    1. Create the actual environment object here and keep it in this process.
+    2. Continuously receive commands (cmd, data) from the pipe using remote.recv(),
+       then perform the corresponding env operation.
+    3. Send the result back to the main process using remote.send(...).
+    """
+
+    env = base_env.init_env(batch_size=1) # Each worker holds only one sub-environment
+    env.seed(seed) 
+
+    while True:
+        cmd, data = remote.recv()
+        if cmd == 'step':
+            actions = [data] 
+            
+            obs, scores, dones, infos = env.step(actions)
+            infos['observation_text'] = obs
+            remote.send((obs, scores, dones, infos))
+
+        elif cmd == 'reset':
+            obs, infos = env.reset()
+            infos['observation_text'] = obs
+            remote.send((obs, infos))
+
+        elif cmd == 'getobs':
+            image = get_obs_image(env)
+            image = image.cpu()  
+            remote.send(image)
+
+        elif cmd == 'close':
+            remote.close()
+            break
+
+        else:
+            raise NotImplementedError("Unknown command: {}".format(cmd))
+
 class AlfworldEnvs(gym.Env):
-    def __init__(self, alf_config_path, seed, num_processes):
+    def __init__(self, alf_config_path, seed=0, env_num=1, group_n=1, is_train=True):
+        super().__init__()
         config = load_config_file(alf_config_path)
         env_type = config['env']['type']
-        self.multi_modal = env_type == 'AlfredThorEnv'
-        env = get_environment(env_type)(config, train_eval='train')
-        self.envs = env.init_env(batch_size=num_processes)
-        # self.action_space = spaces.Discrete(len(ALF_ACTION_LIST))
-        self.observation_space = spaces.Box(low=0, high=255, shape=(300, 300, 3), dtype=np.uint8)
-        # Add the previous admissible commands for step
-        self.prev_admissible_commands = None
-        self.envs.seed(seed)
+        base_env = get_environment(env_type)(config, train_eval='train' if is_train else 'eval_in_distribution')
+        self.multi_modal = (env_type == 'AlfredThorEnv')
+        self.num_processes = env_num * group_n
+        self.group_n = group_n
+
+        self.parent_remotes = []
+        self.workers = []
+
+        ctx = mp.get_context('fork')
+
+        for i in range(self.num_processes):
+            parent_remote, child_remote = mp.Pipe()
+            worker = ctx.Process(
+                target=worker_func,
+                args=(child_remote, config, seed + (i // self.group_n), base_env)
+            )
+            worker.daemon = True
+            worker.start()
+
+            child_remote.close()
+
+            self.parent_remotes.append(parent_remote)
+            self.workers.append(worker)
+
+        self.prev_admissible_commands = [None for _ in range(self.num_processes)]
 
     def step(self, actions):
-        ## SZ.3.4: sanity checking legal action as rewards
-        # action, legal_action = process_action(self.env, action, self.prev_admissible_commands)
-        obs, scores, dones, infos = self.envs.step(actions)
-        infos['observation_text'] = obs
-        reward = self.compute_reward(infos)
-        self.prev_admissible_commands = infos['admissible_commands']
-        text_obs = list(obs)
-        image_obs = self._get_obs() if self.multi_modal else None
-        return text_obs, image_obs, reward, dones, infos
+        assert len(actions) == self.num_processes, \
+            "The num of actions must be equal to the num of processes"
 
-    def reset(
-        self,
-    ):
-        obs, infos = self.envs.reset()
-        infos['observation_text'] = obs
-        self.prev_admissible_commands = infos['admissible_commands']
-        text_obs = list(obs)
-        image_obs = self._get_obs() if self.multi_modal else None
-        return text_obs, image_obs, infos
+        for i, remote in enumerate(self.parent_remotes):
+            remote.send(('step', actions[i]))
 
-    def _get_obs(self):
-        image = get_obs_image(self.envs)
-        return image
-    
+        text_obs_list = []
+        image_obs_list = []
+        rewards_list = []
+        dones_list = []
+        info_list = []
+
+        for i, remote in enumerate(self.parent_remotes):
+            obs, scores, dones, info = remote.recv()
+            for k in info.keys():
+                info[k] = info[k][0]
+
+            text_obs_list.append(obs[0])
+            dones_list.append(dones[0])
+            info_list.append(info)
+
+            self.prev_admissible_commands[i] = info['admissible_commands']
+            rewards_list.append(compute_reward(info, self.multi_modal))
+
+        if self.multi_modal:
+            image_obs_list = self.getobs()
+        else:
+            image_obs_list = None
+
+        return text_obs_list, image_obs_list, rewards_list, dones_list, info_list
+
+    def reset(self):
+        """
+        Send the reset command to all subprocesses at once and collect initial obs/info from each environment.
+        """
+        text_obs_list = []
+        image_obs_list = []
+        info_list = []
+
+        for remote in self.parent_remotes:
+            remote.send(('reset', None))
+
+        for i, remote in enumerate(self.parent_remotes):
+            obs, info = remote.recv()
+            for k in info.keys():
+                info[k] = info[k][0] 
+            text_obs_list.append(obs[0])
+            self.prev_admissible_commands[i] = info['admissible_commands']
+            info_list.append(info)
+
+        if self.multi_modal:
+            image_obs_list = self.getobs()
+        else:
+            image_obs_list = None
+
+        return text_obs_list, image_obs_list, info_list
+
+    def getobs(self):
+        """
+        Ask each subprocess to return its current frame image.
+        Usually needed only for multi-modal environments; otherwise can return None.
+        """
+        images = []
+        for remote in self.parent_remotes:
+            remote.send(('getobs', None))
+
+        for remote in self.parent_remotes:
+            img = remote.recv()
+            images.append(img)
+        return images
+
     @property
     def get_admissible_commands(self):
+        """
+        Simply return the prev_admissible_commands stored by the main process.
+        You could also design it to fetch after each step or another method.
+        """
         return self.prev_admissible_commands
-    
-    def compute_reward(self, infos):
-        # A function to compute the shaped reward for the alfworld environment
-        # infos: the info returned by the environment
-        ## Tentative rewards: r = success_reward * 10 + goal_conditioned_r - 1*illegal_action
-        if self.multi_modal:
-            reward = [10*float(infos['won'][i]) + float(infos['goal_condition_success_rate'][i]) for i in range(len(infos['won']))]
-        else:
-            reward = [10*float(infos['won'][i]) for i in range(len(infos['won']))]
-        # reward = [reward]
-        return torch.tensor(reward)
 
-def get_encoded_text(observation_text, tokenizer, model):
+    def close(self):
+        """
+        Close all subprocesses
+        """
+        for remote in self.parent_remotes:
+            remote.send(('close', None))
+        for worker in self.workers:
+            worker.join()
 
-    encoded_input = tokenizer(observation_text, return_tensors='pt')
-    outputs = model(**encoded_input)
-    cls_embeddings = outputs.last_hidden_state[:,0,:]
-
-    return cls_embeddings
-
-def get_concat(obs, infos, tokenizer, model, device):
-    assert 'observation_text' in infos.keys(), 'observation_text not in infos!'
-    obs_text = infos['observation_text']
-    obs_text_encode = get_encoded_text(obs_text, tokenizer, model)
-    obs_text_encode = obs_text_encode.to(device)
-    obs_cat = torch.cat((obs.flatten(start_dim=1), obs_text_encode), dim=1)
-    return obs_cat
-
-def get_cards_concat(obs, infos, tokenizer, model, device):
-    ## Need to move these codes to a CNN utils or something
-    assert 'Formula' in infos[0].keys(), 'Formula not in infos!'
-    infos = infos[0]
-    formula_list = infos['Formula']
-    formula = "".join([str("".join([str(x) for x in formula_list]))])
-    obs_text_encode = get_encoded_text(formula, tokenizer, model).to(device)
-    obs_cat = torch.cat((obs.flatten(start_dim=1), obs_text_encode), dim=1)
-    return obs_cat
-
-def build_alfworld_envs(alf_config_path, seed, num_processes):
-    return AlfworldEnvs(alf_config_path, seed, num_processes)
+def build_alfworld_envs(alf_config_path, seed, env_num, group_n, is_train=True):
+    return AlfworldEnvs(alf_config_path, seed, env_num, group_n, is_train)
