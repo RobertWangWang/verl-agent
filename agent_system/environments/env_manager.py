@@ -331,9 +331,9 @@ def make_envs(config):
     
     if "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, train_num_processes,
+        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, config.env.rollout.n,
                              config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
-        _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, val_num_processes,
+        _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, config.data.val_batch_size, 1,
                             config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         
         projection_f = partial(gym_projection, env_name=config.env.env_name)
@@ -361,11 +361,13 @@ def make_envs(config):
 
 
 if __name__ == "__main__":
-    env_name = "alfworld"
+    env_name = "gym_cards"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
+        env_num = 8
+        group_n = 5
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, 4, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
+        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, env_num, group_n, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
         env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
         obs, infos = env_manager.reset()
