@@ -13,8 +13,8 @@ from stable_baselines3.common.atari_wrappers import (ClipRewardEnv,
                                                      MaxAndSkipEnv,
                                                      NoopResetEnv, WarpFrame)
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import (DummyVecEnv, SubprocVecEnv,
-                                              VecEnvWrapper)
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnvWrapper
+from stable_baselines3.common.vec_env.subproc_vec_env import _stack_obs
 from stable_baselines3.common.vec_env.vec_normalize import \
     VecNormalize as VecNormalize_
 
@@ -28,6 +28,30 @@ try:
 except ImportError:
     pass
 
+
+class GroupSeedSubprocVecEnv(SubprocVecEnv):
+    def __init__(self, env_fns, diff_env_num, group_n):
+        super(GroupSeedSubprocVecEnv, self).__init__(env_fns)
+        self.diff_env_num = diff_env_num
+        self.group_n = group_n
+
+    def reset(self):
+        # Seeds and options are only used once
+        self._reset_seeds()
+        self._reset_options()
+
+        for env_idx, remote in enumerate(self.remotes):
+            remote.send(("reset", (self._seeds[env_idx], self._options[env_idx])))
+        results = [remote.recv() for remote in self.remotes]
+        obs, self.reset_infos = zip(*results)  # type: ignore[assignment]
+        return _stack_obs(obs, self.observation_space)
+
+    def _reset_seeds(self) -> None:
+        # randomly generate "env_num" seeds
+        seeds = np.random.randint(0, np.iinfo(np.int16).max, size=self.diff_env_num, dtype=np.int16)
+        # assign the same seed to each group of "group_n" envs
+        seeds = np.repeat(seeds, self.group_n)
+        self._seeds = seeds.tolist()
 
 def make_env(env_id, seed, rank, log_dir, allow_early_resets, use_cnn=False):
     def _thunk():
@@ -43,7 +67,7 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, use_cnn=False):
         if is_atari:
             env = NoopResetEnv(env, noop_max=30)
             env = MaxAndSkipEnv(env, skip=4)
-        env.reset(seed=seed+rank)
+        env.reset(seed=seed)
 
         if str(env.__class__.__name__).find('TimeLimit') >= 0:
             env = TimeLimitMask(env)
@@ -73,28 +97,28 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets, use_cnn=False):
 
 def build_gymcards_envs(env_name,
                   seed,
-                  num_processes,
+                  env_num,
+                  group_n,
                   gamma,
                   log_dir,
                   device,
                   allow_early_resets,
                   num_frame_stack=None,
                   use_cnn=False):
+    num_processes = env_num * group_n
     envs = [
-        make_env(env_name, seed, i, log_dir, allow_early_resets, use_cnn)
+        make_env(env_name, seed + (i // group_n), i, log_dir, allow_early_resets, use_cnn)
         for i in range(num_processes)
     ]
 
     if len(envs) > 1:
-        envs = SubprocVecEnv(envs)
+        envs = GroupSeedSubprocVecEnv(envs, env_num, group_n)
+        envs._reset_seeds()
     else:
         envs = DummyVecEnv(envs)
 
     if len(envs.observation_space.shape) == 1:
-        if gamma is None:
-            envs = VecNormalize(envs, norm_reward=False)
-        else:
-            envs = VecNormalize(envs, gamma=gamma)
+        raise NotImplementedError("Vectorized observation space is not supported")
 
     envs = VecPyTorch(envs, device)
 
