@@ -1,14 +1,14 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=4,5
+export CUDA_VISIBLE_DEVICES=0,1
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/alfworld/tw/zero_shot/train.parquet \
     data.val_files=$HOME/data/alfworld/tw/zero_shot/test.parquet \
-    data.train_batch_size=2 \
-    data.val_batch_size=8 \
+    data.train_batch_size=8 \
+    data.val_batch_size=64 \
     data.max_prompt_length=2048 \
     data.max_response_length=2048 \
     data.filter_overlong_prompts=True \
@@ -38,9 +38,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
+    algorithm.gamma=0.99 \
     env.env_name=alfworld/AlfredTWEnv \
-    env.rollout.n=5 \
-    env.max_steps=5 \
+    env.max_steps=50 \
+    env.rollout.n=8 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_debug' \

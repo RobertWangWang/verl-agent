@@ -57,9 +57,10 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
+          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
         """
         obs, infos = self.envs.reset()
-        return {'text': None, 'image': obs}, infos
+        return {'text': None, 'image': obs, 'raw': None}, infos
     
     def step(self, text_actions: List[str]):
         """
@@ -72,6 +73,7 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
+          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
         - rewards (np.ndarry or torch.Tensor): The rewards returned by the environment.
         - dones (np.ndarray or torch.Tensor): Done flags indicating which environments have completed.
         - infos (List[Dict]): Additional environment information.
@@ -84,7 +86,8 @@ class EnvironmentManagerBase:
 
         next_observations = {
             'text': None, # TODO: Implement this if needed
-            'image': next_obs
+            'image': next_obs,
+            'raw': None # For GiGPO only. raw observation without any histories, hint, etc. Implement this if needed
         }
         # add action_valid to infos
         for i, info in enumerate(infos):
@@ -148,7 +151,7 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
     
     def reset(self) -> Dict[str, Any]:
         obs = self.envs.reset()
-        observations = {'text': None, 'image': obs}
+        observations = {'text': None, 'image': obs, 'raw': obs}
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
             observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(observations)
         
@@ -161,6 +164,7 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         # add text observation to next_observations
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
             next_observations['text'] = self.build_text_obs(infos)
+            next_observations['raw'] = next_observations['image']
 
         return next_observations, rewards, dones, infos
     
@@ -198,15 +202,15 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.tasks = []
         self.extract_task(text_obs)
 
-        text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
-        return {'text': text_obs, 'image': image_obs}, infos
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
+        return {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}, infos
     
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
         self.save_to_history_buffer(actions, text_obs)
 
-        text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
         if infos[0].get("extra.gamefile") is None:
             infos = set_gamefile(infos, self.gamefile)
 
@@ -214,11 +218,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
-        next_obs = {'text': text_obs, 'image': image_obs}
+        next_observations = {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 
-        return next_obs, rewards, dones, infos
+        return next_observations, rewards, dones, infos
     
     def extract_task(self, text_obs: List[str]):
         for obs in text_obs:
@@ -236,7 +240,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         """
         postprocess_text_obs = []
         for i in range(len(text_obs)):
-            reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i])
+            # exclude 'help' in admissible_actions[i]
+            reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i] if s != 'help')
 
             if init:
                 obs = ALFWORLD_INIT_TEXT_OBS.format(

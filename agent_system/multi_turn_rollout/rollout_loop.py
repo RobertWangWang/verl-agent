@@ -44,7 +44,7 @@ class TrajectoryCollector:
             item (int): Sample index in the batch
             config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
-            obs (Dict): Environment observation, may contain 'text' and 'image' keys
+            obs (Dict): Environment observation, may contain 'text', 'image', 'raw' keys
             pre_batch_output (DataProto, optional): Output from previous batch, used to get previous action
             use_action (bool): Whether to use previous action
         
@@ -58,8 +58,10 @@ class TrajectoryCollector:
         # Get observation components
         obs_texts = obs.get('text', None)
         obs_images = obs.get('image', None)
+        obs_raws = obs.get('raw', None)
         obs_text = obs_texts[item] if obs_texts is not None else None
         obs_image = obs_images[item] if obs_images is not None else None
+        obs_raw = obs_raws[item] if obs_raws is not None else None
         is_multi_modal = obs_image is not None
 
         # Get previous action
@@ -157,6 +159,7 @@ class TrajectoryCollector:
             'attention_mask': attention_mask[0],
             'position_ids': position_ids[0],
             'raw_prompt_ids': self.tokenizer.encode(raw_prompt, add_special_tokens=False),
+            'raw_obs': obs_raw,
             'index': item,
             'data_source': data_source
         })
@@ -182,6 +185,7 @@ class TrajectoryCollector:
             obs (Dict): Environment observation dictionary
                 - 'text' (None or List[str]): Text observation data
                 - 'image' (np.ndarray or torch.Tensor): Image observation data
+                - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
             pre_batch_output (DataProto, optional): Output from previous batch
         
         Returns:
@@ -276,24 +280,6 @@ class TrajectoryCollector:
                         data[key] = value
 
                     effective_batch.append(data)
-        
-        def adjust_batch(config, effective_batch):
-            size_divisor_ref = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
-            size_divisor_rollout = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
-            size_divisor_actor = config.actor_rollout_ref.actor.ppo_mini_batch_size
-            size_divisor = np.lcm.reduce(np.array([size_divisor_ref, size_divisor_rollout, size_divisor_actor])).item()
-
-            # check if the batch size is divisible by the dp size, if not, delete the last few samples to make it divisible
-            bs = len(effective_batch)
-            if bs % size_divisor != 0:
-                remainder = bs % size_divisor
-                print(f"Current batch size: {bs} cannot be divided by {size_divisor}, randomly deleting {remainder} samples")
-                
-                keep_size = bs - remainder
-                effective_batch = [effective_batch[i] for i in np.random.permutation(bs)[:keep_size]]
-            return effective_batch
-        
-        effective_batch = adjust_batch(config, effective_batch)
             
         # Convert trajectory data to DataProto format
         gen_batch_output = DataProto.from_single_dict(

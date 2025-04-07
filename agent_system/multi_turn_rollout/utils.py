@@ -66,3 +66,36 @@ def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 256 * 
         image = image.convert('RGB')
 
     return image
+
+
+def adjust_batch(config, data: DataProto) -> DataProto:
+    size_divisor_ref = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
+    size_divisor_rollout = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
+    size_divisor_actor = config.actor_rollout_ref.actor.ppo_mini_batch_size
+    size_divisor = np.lcm.reduce(np.array([size_divisor_ref, size_divisor_rollout, size_divisor_actor])).item()
+
+    # check if the batch size is divisible by the dp size, if not, delete the last few samples to make it divisible
+    bs = len(data)
+    if bs % size_divisor != 0:
+        remainder = bs % size_divisor
+        print(f"Current batch size: {bs} cannot be divided by {size_divisor}, randomly deleting {remainder} samples")
+        
+        # Generate indices to remove, rather than indices to keep
+        remove_indices = np.random.choice(bs, remainder, replace=False)
+        # Sort remove_indices to maintain stability when deleting
+        remove_indices = np.sort(remove_indices)
+        
+        # Create a boolean mask for elements to keep
+        keep_mask = np.ones(bs, dtype=bool)
+        keep_mask[remove_indices] = False
+
+        keep_mask_tensor = torch.tensor(keep_mask, dtype=torch.bool, device=data.batch['input_ids'].device)
+        # Apply the mask to keep elements in their original order
+        tensor_data = data.batch[keep_mask_tensor]
+        non_tensor_data = {key: val[keep_mask] for key, val in data.non_tensor_batch.items()}
+        adjusted_batch = DataProto(batch=tensor_data, non_tensor_batch=non_tensor_data, meta_info=data.meta_info)
+        del data
+    else:
+        adjusted_batch = data
+
+    return adjusted_batch
