@@ -321,17 +321,24 @@ class TrajectoryCollector:
         Returns:
             DataProto: Trajectory data with sequences, rewards, and other agent_loop information
         """
-        # Initialize trajectory collection
-        batch_size = len(gen_batch.batch['input_ids'])
-        device = gen_batch.batch['input_ids'].device
-        
         # Initial observations from the environment
         obs, infos = envs.reset()
-        
+
+        # Initialize trajectory collection
+        if len(gen_batch.batch) != len(obs['text']):
+            gen_batch = gen_batch.repeat(repeat_times=config.env.rollout.n, interleave=True)
+            assert len(gen_batch.batch) == len(obs['text']), f"gen_batch size {len(gen_batch.batch)} does not match obs size {len(obs['text'])}"
+
+        batch_size = len(gen_batch.batch['input_ids'])
+        device = gen_batch.batch['input_ids'].device
         batch_output = None
         
-        uid = str(uuid.uuid4())
-        uid_batch = np.array([uid for _ in range(len(gen_batch.batch))], dtype=object)
+        uid_batch = []
+        for i in range(batch_size):
+            if i % config.env.rollout.n == 0:
+                uid = str(uuid.uuid4())
+            uid_batch.append(uid)
+        uid_batch = np.array(uid_batch, dtype=object)
         is_done = np.zeros(batch_size, dtype=bool)
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
         total_batch_list = [[] for _ in range(batch_size)]
@@ -339,7 +346,7 @@ class TrajectoryCollector:
         episode_lengths = np.zeros(batch_size, dtype=np.int32)
         episode_rewards = np.zeros(batch_size, dtype=np.float32)
         # Trajectory collection loop
-        for step in range(config.env.max_steps):
+        for _step in range(config.env.max_steps):
             active_masks = np.logical_not(is_done)
 
             batch = self.preprocess_batch(config=config,

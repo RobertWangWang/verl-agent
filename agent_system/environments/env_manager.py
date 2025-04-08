@@ -17,22 +17,23 @@ def to_numpy(tensor):
         raise ValueError(f"Unsupported type: {type(tensor)})")
     return tensor
 
-def parse_infos(infos_dict):
-    """
-    Some environments may return infos as a dictionary of lists, e.g. {'key1': [value1, value2, ...], 'key2': [value1, value2, ...]}.
-    This function parses infos as a unified format, e.g. [{'key1': value1, 'key2': value1}, {'key1': value2, 'key2': value2}, ...].
-    """
-    infos_list = []
-    
-    num_elements = len(infos_dict[list(infos_dict.keys())[0]])
-    
-    for i in range(num_elements):
-        item_dict = {}
-        for key, value_list in infos_dict.items():
-            item_dict[key] = value_list[i]
-        infos_list.append(item_dict)
-    
-    return infos_list
+
+def parse_gamefile(infos):
+    gamefile = []
+    for info in infos:
+        if 'extra.gamefile' in info:
+            gamefile.append(info['extra.gamefile'])
+        else:
+            gamefile.append(None)
+    return gamefile
+
+def set_gamefile(infos, gamefile):
+    for i in range(len(infos)):
+        if 'extra.gamefile' in infos[i]:
+            infos[i]['extra.gamefile'] = gamefile[i]
+        else:
+            infos[i]['extra.gamefile'] = None
+    return infos
 
 class EnvironmentManagerBase:
     def __init__(self, envs, projection_f, env_name=None):
@@ -189,7 +190,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
     
     def reset(self):
         text_obs, image_obs, infos = self.envs.reset()
-        self.gamefile = infos['extra.gamefile']
+        self.gamefile = parse_gamefile(infos)
         # initialize the history buffer
         if self.buffers is not None:
             del self.buffers
@@ -198,7 +199,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.extract_task(text_obs)
 
         text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
-        return {'text': text_obs, 'image': image_obs}, parse_infos(infos)
+        return {'text': text_obs, 'image': image_obs}, infos
     
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
@@ -206,16 +207,15 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.save_to_history_buffer(actions, text_obs)
 
         text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
-        if infos.get("extra.gamefile")[0] is None:
-            infos['extra.gamefile'] = self.gamefile
-
-        infos = parse_infos(infos)
+        if infos[0].get("extra.gamefile") is None:
+            infos = set_gamefile(infos, self.gamefile)
 
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
         next_obs = {'text': text_obs, 'image': image_obs}
+        rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 
         return next_obs, rewards, dones, infos
@@ -326,9 +326,9 @@ def make_envs(config):
     
     if "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, train_num_processes,
+        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, config.env.rollout.n,
                              config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
-        _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, val_num_processes,
+        _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, config.data.val_batch_size, 1,
                             config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         
         projection_f = partial(gym_projection, env_name=config.env.env_name)
@@ -343,8 +343,8 @@ def make_envs(config):
             alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         else:
             raise ValueError(f"Unsupported environment: {config.env.env_name}")
-        _envs = build_alfworld_envs(alf_config_path, config.env.seed, train_num_processes)
-        _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, val_num_processes)
+        _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, config.env.rollout.n, is_train=True)
+        _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, config.data.val_batch_size, 1, is_train=False)
         
         projection_f = partial(alfworld_projection)
         envs = AlfWorldEnvironmentManager(_envs, projection_f, config.env.env_name)
@@ -356,11 +356,13 @@ def make_envs(config):
 
 
 if __name__ == "__main__":
-    env_name = "alfworld"
+    env_name = "gym_cards"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
+        env_num = 8
+        group_n = 5
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, 4, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
+        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, env_num, group_n, 0.99, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
         env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
         obs, infos = env_manager.reset()
@@ -375,26 +377,32 @@ if __name__ == "__main__":
         from agent_system.environments.env_package.alfworld import build_alfworld_envs
         import time
         alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
-        envs = build_alfworld_envs(alf_config_path, 1, 2)
+        env_num = 8
+        group_n = 5
+        time1 = time.time()
+        envs = build_alfworld_envs(alf_config_path, seed=1, env_num=env_num, group_n=group_n)
         # val_envs = build_alfworld_envs(alf_config_path, 1000, 4)
         env_manager = AlfWorldEnvironmentManager(envs, alfworld_projection, 'alfworld/AlfredThorEnv')
-        # val_env_manager = AlfWorldEnvironmentManager(val_envs, alfworld_projection, 'alfworld/AlfredTWEnv')
-        obs, infos = env_manager.reset()
-        time1 = time.time()
-        for i in range(100):
-            # get random actions from admissible 'valid' commands (not available for AlfredThorEnv)
-            print("step: ", i)
-            random_actions = [np.random.choice(infos[i]['admissible_commands']) for i in range(len(infos))]
-            # step
-            obs, rewards, dones, infos = env_manager.step(random_actions)
-            if np.array(dones).any():
-                print("Episode completed")
-
-            for k in range(len(infos)):
-                assert infos[k]['won'] == False
-            if obs['image'] is not None:
-                env_manager.save_image(obs['image'], i)
-            # print("obs['image'].shape: ", obs['image'].shape)
         time2 = time.time()
-        print("Time elapsed: ", time2 - time1)
-        print("completed")
+        print(f"env_num: {env_num}, group_n: {group_n}, init time: ", time2 - time1)
+        # val_env_manager = AlfWorldEnvironmentManager(val_envs, alfworld_projection, 'alfworld/AlfredTWEnv')
+        for k in range(10):
+            time1 = time.time()
+            obs, infos = env_manager.reset()
+            for i in range(20):
+                # get random actions from admissible 'valid' commands (not available for AlfredThorEnv)
+                print("step: ", i)
+                random_actions = [np.random.choice(env_manager.envs.get_admissible_commands[i]) for i in range(len(env_manager.envs.get_admissible_commands))]
+                # step
+                obs, rewards, dones, infos = env_manager.step(random_actions)
+                if np.array(dones).any():
+                    print("Episode completed")
+
+                for k in range(len(infos)):
+                    assert infos[k]['won'] == False
+                if obs['image'] is not None:
+                    env_manager.save_image(obs['image'], i)
+                # print("obs['image'].shape: ", obs['image'].shape)
+            time2 = time.time()
+            print(f"env_num: {env_num}, group_n: {group_n}, Time elapsed: ", time2 - time1)
+            print("completed")

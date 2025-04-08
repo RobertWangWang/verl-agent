@@ -158,7 +158,7 @@ class TaskRunner:
 
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
-        assert config.actor_rollout_ref.rollout.n == 1, "In verl, n>1 is for GRPO. In verl+env, we keep n=1, and achieve GRPO by env.rollout.n"
+        assert config.actor_rollout_ref.rollout.n == 1, "In verl, actor_rollout_ref.rollout.n>1 is for GRPO. In verl+env, we keep n=1, and achieve GRPO by env.rollout.n"
 
         from agent_system.environments import make_envs
         envs, val_envs = make_envs(config)
