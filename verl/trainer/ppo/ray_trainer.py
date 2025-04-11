@@ -43,8 +43,9 @@ from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
 from verl.utils.tracking import ValidationGenerationsLogger
 from torch.utils.data import RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
+from gigpo import core_gigpo
 
-from agent_system.multi_turn_rollout import TrajectoryCollector
+from agent_system.multi_turn_rollout import TrajectoryCollector, adjust_batch
 
 WorkerType = Type[Worker]
 
@@ -71,6 +72,7 @@ class AdvantageEstimator(str, Enum):
     REINFORCE_PLUS_PLUS = 'reinforce_plus_plus'
     REMAX = 'remax'
     RLOO = 'rloo'
+    GiGPO = 'gigpo'
 
 
 @dataclass
@@ -137,6 +139,8 @@ from verl.utils.torch_functional import masked_mean
 
 def apply_invalid_action_penalty(data: DataProto, invalid_action_penalty_coef=float):
     reward_tensor = data.batch['token_level_scores']
+    if 'step_rewards' in data.batch.keys():
+        step_rewards = data.batch['step_rewards']
     for i in range(len(data)):
         data_item = data[i]  # DataProtoItem
 
@@ -151,6 +155,9 @@ def apply_invalid_action_penalty(data: DataProto, invalid_action_penalty_coef=fl
         # invalid action penalty
         # assert reward_tensor[i, valid_response_length - 1] != 0.0, f'i={i}'
         reward_tensor[i, valid_response_length - 1] -= invalid_action_penalty_coef * action_invalids
+
+        if 'step_rewards' in data.batch.keys():
+            step_rewards[i] -= invalid_action_penalty_coef * action_invalids
     
     metrics = {'valid_action_ratio': np.mean(data.non_tensor_batch['is_action_valid']).item(), 
                'invalid_action_penalty_coef': invalid_action_penalty_coef}
@@ -193,7 +200,7 @@ def compute_response_mask(data: DataProto):
     return attention_mask[:, -response_length:]
 
 
-def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_repeat=1):
+def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_advantage_w=0.8, num_repeat=1):
     # Back-compatible with trainers that do not compute response mask in fit
     if "response_mask" not in data.batch.keys():
         data.batch['response_mask'] = compute_response_mask(data)
@@ -234,6 +241,17 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
             token_level_rewards=data.batch['token_level_rewards'],
             eos_mask=data.batch['response_mask'],
             index=data.non_tensor_batch['uid'])
+        data.batch['advantages'] = advantages
+        data.batch['returns'] = returns
+    elif adv_estimator == AdvantageEstimator.GiGPO:
+        advantages, returns = core_gigpo.compute_gigpo_outcome_advantage(
+            token_level_rewards=data.batch['token_level_rewards'], # for episode group reward computing
+            step_rewards=data.batch['step_rewards'], # for step group reward computing
+            eos_mask=data.batch['response_mask'],
+            raw_obs=data.non_tensor_batch['raw_obs'],
+            index=data.non_tensor_batch['uid'],
+            step_advantage_w=step_advantage_w,
+            )
         data.batch['advantages'] = advantages
         data.batch['returns'] = returns
     else:
@@ -302,7 +320,7 @@ class RayPPOTrainer(object):
             self.use_critic = True
         elif self.config.algorithm.adv_estimator in [
                 AdvantageEstimator.GRPO, AdvantageEstimator.REINFORCE_PLUS_PLUS, AdvantageEstimator.REMAX,
-                AdvantageEstimator.RLOO
+                AdvantageEstimator.RLOO, AdvantageEstimator.GiGPO
         ]:
             self.use_critic = False
         else:
@@ -379,7 +397,7 @@ class RayPPOTrainer(object):
         #    ppo_mini_batch_size is divisible by ppo_micro_batch_size
         #    ppo_micro_batch_size * sequence_parallel_size >= n_gpus
         if not config.actor_rollout_ref.actor.use_dynamic_bsz:
-            assert config.data.train_batch_size >= config.actor_rollout_ref.actor.ppo_mini_batch_size
+            # assert config.data.train_batch_size >= config.actor_rollout_ref.actor.ppo_mini_batch_size
             sp_size = config.actor_rollout_ref.actor.get('ulysses_sequence_parallel_size', 1)
             if config.actor_rollout_ref.actor.ppo_micro_batch_size is not None:
                 assert config.actor_rollout_ref.actor.ppo_mini_batch_size % config.actor_rollout_ref.actor.ppo_micro_batch_size == 0
@@ -905,6 +923,15 @@ class RayPPOTrainer(object):
                     del batch
                     batch = gen_batch_output
 
+                    if self.config.algorithm.adv_estimator == AdvantageEstimator.GiGPO:
+                        step_rewards_tensor = core_gigpo.compute_step_discounted_returns(
+                            batch=batch,
+                            gamma=self.config.algorithm.gamma
+                        )
+                        batch.batch['step_rewards'] = step_rewards_tensor
+                    
+                    batch = adjust_batch(self.config, batch)
+
                     batch.batch['response_mask'] = compute_response_mask(batch)
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
@@ -966,7 +993,9 @@ class RayPPOTrainer(object):
                                                   adv_estimator=self.config.algorithm.adv_estimator,
                                                   gamma=self.config.algorithm.gamma,
                                                   lam=self.config.algorithm.lam,
-                                                  num_repeat=self.config.actor_rollout_ref.rollout.n)
+                                                  num_repeat=self.config.actor_rollout_ref.rollout.n,
+                                                  step_advantage_w=self.config.algorithm.gigpo.step_advantage_w,
+                                                  )
 
                     # update critic
                     if self.use_critic:

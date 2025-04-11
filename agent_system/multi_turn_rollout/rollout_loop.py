@@ -44,7 +44,7 @@ class TrajectoryCollector:
             item (int): Sample index in the batch
             config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
-            obs (Dict): Environment observation, may contain 'text' and 'image' keys
+            obs (Dict): Environment observation, may contain 'text', 'image', 'raw' keys
             pre_batch_output (DataProto, optional): Output from previous batch, used to get previous action
             use_action (bool): Whether to use previous action
         
@@ -58,9 +58,13 @@ class TrajectoryCollector:
         # Get observation components
         obs_texts = obs.get('text', None)
         obs_images = obs.get('image', None)
+        obs_raws = obs.get('raw', None)
         obs_text = obs_texts[item] if obs_texts is not None else None
         obs_image = obs_images[item] if obs_images is not None else None
+        obs_raw = obs_raws[item] if obs_raws is not None else None
         is_multi_modal = obs_image is not None
+
+        _obs_raw = torch_to_numpy(obs_raw, is_object=True) if isinstance(obs_raw, torch.Tensor) else obs_raw
 
         # Get previous action
         pre_action = None
@@ -157,6 +161,7 @@ class TrajectoryCollector:
             'attention_mask': attention_mask[0],
             'position_ids': position_ids[0],
             'raw_prompt_ids': self.tokenizer.encode(raw_prompt, add_special_tokens=False),
+            'raw_obs': _obs_raw,
             'index': item,
             'data_source': data_source
         })
@@ -182,6 +187,7 @@ class TrajectoryCollector:
             obs (Dict): Environment observation dictionary
                 - 'text' (None or List[str]): Text observation data
                 - 'image' (np.ndarray or torch.Tensor): Image observation data
+                - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
             pre_batch_output (DataProto, optional): Output from previous batch
         
         Returns:
@@ -276,24 +282,6 @@ class TrajectoryCollector:
                         data[key] = value
 
                     effective_batch.append(data)
-        
-        def adjust_batch(config, effective_batch):
-            size_divisor_ref = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
-            size_divisor_rollout = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
-            size_divisor_actor = config.actor_rollout_ref.actor.ppo_mini_batch_size
-            size_divisor = np.lcm.reduce(np.array([size_divisor_ref, size_divisor_rollout, size_divisor_actor])).item()
-
-            # check if the batch size is divisible by the dp size, if not, delete the last few samples to make it divisible
-            bs = len(effective_batch)
-            if bs % size_divisor != 0:
-                remainder = bs % size_divisor
-                print(f"Current batch size: {bs} cannot be divided by {size_divisor}, randomly deleting {remainder} samples")
-                
-                keep_size = bs - remainder
-                effective_batch = [effective_batch[i] for i in np.random.permutation(bs)[:keep_size]]
-            return effective_batch
-        
-        effective_batch = adjust_batch(config, effective_batch)
             
         # Convert trajectory data to DataProto format
         gen_batch_output = DataProto.from_single_dict(
@@ -325,20 +313,25 @@ class TrajectoryCollector:
         obs, infos = envs.reset()
 
         # Initialize trajectory collection
-        if len(gen_batch.batch) != len(obs['text']):
+        lenght_obs = len(obs['text']) if obs['text'] is not None else len(obs['image'])
+        if len(gen_batch.batch) != lenght_obs and config.env.rollout.n > 0:
             gen_batch = gen_batch.repeat(repeat_times=config.env.rollout.n, interleave=True)
-            assert len(gen_batch.batch) == len(obs['text']), f"gen_batch size {len(gen_batch.batch)} does not match obs size {len(obs['text'])}"
+        assert len(gen_batch.batch) == lenght_obs, f"gen_batch size {len(gen_batch.batch)} does not match obs size {lenght_obs}"
 
         batch_size = len(gen_batch.batch['input_ids'])
         device = gen_batch.batch['input_ids'].device
         batch_output = None
         
-        uid_batch = []
-        for i in range(batch_size):
-            if i % config.env.rollout.n == 0:
-                uid = str(uuid.uuid4())
-            uid_batch.append(uid)
-        uid_batch = np.array(uid_batch, dtype=object)
+        if config.env.rollout.n > 0: # env grouping
+            uid_batch = []
+            for i in range(batch_size):
+                if i % config.env.rollout.n == 0:
+                    uid = str(uuid.uuid4())
+                uid_batch.append(uid)
+            uid_batch = np.array(uid_batch, dtype=object)
+        else: # no env grouping, set all to the same uid
+            uid = str(uuid.uuid4())
+            uid_batch = np.array([uid for _ in range(len(gen_batch.batch))], dtype=object)
         is_done = np.zeros(batch_size, dtype=bool)
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
         total_batch_list = [[] for _ in range(batch_size)]

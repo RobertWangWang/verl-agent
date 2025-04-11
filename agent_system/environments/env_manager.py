@@ -57,9 +57,10 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
+          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
         """
         obs, infos = self.envs.reset()
-        return {'text': None, 'image': obs}, infos
+        return {'text': None, 'image': obs, 'raw': None}, infos
     
     def step(self, text_actions: List[str]):
         """
@@ -72,6 +73,7 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
+          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
         - rewards (np.ndarry or torch.Tensor): The rewards returned by the environment.
         - dones (np.ndarray or torch.Tensor): Done flags indicating which environments have completed.
         - infos (List[Dict]): Additional environment information.
@@ -84,7 +86,8 @@ class EnvironmentManagerBase:
 
         next_observations = {
             'text': None, # TODO: Implement this if needed
-            'image': next_obs
+            'image': next_obs,
+            'raw': None # For GiGPO only. raw observation without any histories, hint, etc. Implement this if needed
         }
         # add action_valid to infos
         for i, info in enumerate(infos):
@@ -148,9 +151,9 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
     
     def reset(self) -> Dict[str, Any]:
         obs = self.envs.reset()
-        observations = {'text': None, 'image': obs}
+        observations = {'text': None, 'image': obs, 'raw': obs.clone()}
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
-            observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(observations)
+            observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(obs)
         
         infos = [None] * self.envs.num_envs
         return observations, infos
@@ -161,6 +164,8 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         # add text observation to next_observations
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
             next_observations['text'] = self.build_text_obs(infos)
+            
+        next_observations['raw'] = next_observations['image'].clone()
 
         return next_observations, rewards, dones, infos
     
@@ -198,15 +203,15 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.tasks = []
         self.extract_task(text_obs)
 
-        text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
-        return {'text': text_obs, 'image': image_obs}, infos
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
+        return {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}, infos
     
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
         self.save_to_history_buffer(actions, text_obs)
 
-        text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
         if infos[0].get("extra.gamefile") is None:
             infos = set_gamefile(infos, self.gamefile)
 
@@ -214,11 +219,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
-        next_obs = {'text': text_obs, 'image': image_obs}
+        next_observations = {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 
-        return next_obs, rewards, dones, infos
+        return next_observations, rewards, dones, infos
     
     def extract_task(self, text_obs: List[str]):
         for obs in text_obs:
@@ -236,7 +241,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         """
         postprocess_text_obs = []
         for i in range(len(text_obs)):
-            reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i])
+            # exclude 'help' in admissible_actions[i]
+            reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i] if s != 'help')
 
             if init:
                 obs = ALFWORLD_INIT_TEXT_OBS.format(
@@ -320,13 +326,14 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 def make_envs(config):
     """
     Create enviroments 
-    """
-    train_num_processes = config.data.train_batch_size * config.env.rollout.n
-    val_num_processes = config.data.val_batch_size * config.env.rollout.n
-    
+    """ 
+    # check if config.env.rollout.n is an integer
+    if not isinstance(config.env.rollout.n, int):
+        raise ValueError("config.env.rollout.n should be an integer")
+    group_n = config.env.rollout.n if config.env.rollout.n > 0 else 1
     if "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, config.env.rollout.n,
+        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, group_n,
                              config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, config.data.val_batch_size, 1,
                             config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
@@ -343,7 +350,7 @@ def make_envs(config):
             alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         else:
             raise ValueError(f"Unsupported environment: {config.env.env_name}")
-        _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, config.env.rollout.n, is_train=True)
+        _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, group_n, is_train=True)
         _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, config.data.val_batch_size, 1, is_train=False)
         
         projection_f = partial(alfworld_projection)
