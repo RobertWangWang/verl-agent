@@ -35,17 +35,6 @@ class GroupSeedSubprocVecEnv(SubprocVecEnv):
         self.diff_env_num = diff_env_num
         self.group_n = group_n
 
-    def reset(self):
-        # Seeds and options are only used once
-        self._reset_seeds()
-        self._reset_options()
-
-        for env_idx, remote in enumerate(self.remotes):
-            remote.send(("reset", (self._seeds[env_idx], self._options[env_idx])))
-        results = [remote.recv() for remote in self.remotes]
-        obs, self.reset_infos = zip(*results)  # type: ignore[assignment]
-        return _stack_obs(obs, self.observation_space)
-
     def _reset_seeds(self) -> None:
         # randomly generate "env_num" seeds
         seeds = np.random.randint(0, np.iinfo(np.int16).max, size=self.diff_env_num, dtype=np.int16)

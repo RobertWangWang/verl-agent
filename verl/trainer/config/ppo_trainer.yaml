@@ -171,7 +171,7 @@ env:
   gamma: 0.9
   max_steps: 32
   rollout:
-    n: 1
+    n: -1 # -1 means disable env grouping.
 
 custom_reward_function:
   path: null
@@ -188,6 +188,9 @@ algorithm:
     kl_coef: 0.001
     horizon: 10000
     target_kl: 0.1
+  gigpo:
+    gamma: 0.98
+    step_advantage_w: 0.5
 
 trainer:
   balance_batch: True

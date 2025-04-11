@@ -64,6 +64,8 @@ class TrajectoryCollector:
         obs_raw = obs_raws[item] if obs_raws is not None else None
         is_multi_modal = obs_image is not None
 
+        _obs_raw = torch_to_numpy(obs_raw, is_object=True) if isinstance(obs_raw, torch.Tensor) else obs_raw
+
         # Get previous action
         pre_action = None
         if pre_batch_output is not None and use_action:
@@ -159,7 +161,7 @@ class TrajectoryCollector:
             'attention_mask': attention_mask[0],
             'position_ids': position_ids[0],
             'raw_prompt_ids': self.tokenizer.encode(raw_prompt, add_special_tokens=False),
-            'raw_obs': obs_raw,
+            'raw_obs': _obs_raw,
             'index': item,
             'data_source': data_source
         })
@@ -311,20 +313,25 @@ class TrajectoryCollector:
         obs, infos = envs.reset()
 
         # Initialize trajectory collection
-        if len(gen_batch.batch) != len(obs['text']):
+        lenght_obs = len(obs['text']) if obs['text'] is not None else len(obs['image'])
+        if len(gen_batch.batch) != lenght_obs and config.env.rollout.n > 0:
             gen_batch = gen_batch.repeat(repeat_times=config.env.rollout.n, interleave=True)
-            assert len(gen_batch.batch) == len(obs['text']), f"gen_batch size {len(gen_batch.batch)} does not match obs size {len(obs['text'])}"
+        assert len(gen_batch.batch) == lenght_obs, f"gen_batch size {len(gen_batch.batch)} does not match obs size {lenght_obs}"
 
         batch_size = len(gen_batch.batch['input_ids'])
         device = gen_batch.batch['input_ids'].device
         batch_output = None
         
-        uid_batch = []
-        for i in range(batch_size):
-            if i % config.env.rollout.n == 0:
-                uid = str(uuid.uuid4())
-            uid_batch.append(uid)
-        uid_batch = np.array(uid_batch, dtype=object)
+        if config.env.rollout.n > 0: # env grouping
+            uid_batch = []
+            for i in range(batch_size):
+                if i % config.env.rollout.n == 0:
+                    uid = str(uuid.uuid4())
+                uid_batch.append(uid)
+            uid_batch = np.array(uid_batch, dtype=object)
+        else: # no env grouping, set all to the same uid
+            uid = str(uuid.uuid4())
+            uid_batch = np.array([uid for _ in range(len(gen_batch.batch))], dtype=object)
         is_done = np.zeros(batch_size, dtype=bool)
         traj_uid = np.array([str(uuid.uuid4()) for _ in range(batch_size)], dtype=object)
         total_batch_list = [[] for _ in range(batch_size)]

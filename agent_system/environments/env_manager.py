@@ -151,9 +151,9 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
     
     def reset(self) -> Dict[str, Any]:
         obs = self.envs.reset()
-        observations = {'text': None, 'image': obs, 'raw': obs}
+        observations = {'text': None, 'image': obs, 'raw': obs.clone()}
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
-            observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(observations)
+            observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(obs)
         
         infos = [None] * self.envs.num_envs
         return observations, infos
@@ -164,7 +164,8 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         # add text observation to next_observations
         if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
             next_observations['text'] = self.build_text_obs(infos)
-            next_observations['raw'] = next_observations['image']
+            
+        next_observations['raw'] = next_observations['image'].clone()
 
         return next_observations, rewards, dones, infos
     
@@ -325,13 +326,14 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 def make_envs(config):
     """
     Create enviroments 
-    """
-    train_num_processes = config.data.train_batch_size * config.env.rollout.n
-    val_num_processes = config.data.val_batch_size * config.env.rollout.n
-    
+    """ 
+    # check if config.env.rollout.n is an integer
+    if not isinstance(config.env.rollout.n, int):
+        raise ValueError("config.env.rollout.n should be an integer")
+    group_n = config.env.rollout.n if config.env.rollout.n > 0 else 1
     if "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, config.env.rollout.n,
+        _envs = build_gymcards_envs(config.env.env_name, config.env.seed, config.data.train_batch_size, group_n,
                              config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
         _val_envs = build_gymcards_envs(config.env.env_name, config.env.seed + 1000, config.data.val_batch_size, 1,
                             config.env.gamma, log_dir=None, device='cpu', allow_early_resets=False, num_frame_stack=1)
@@ -348,7 +350,7 @@ def make_envs(config):
             alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         else:
             raise ValueError(f"Unsupported environment: {config.env.env_name}")
-        _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, config.env.rollout.n, is_train=True)
+        _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, group_n, is_train=True)
         _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, config.data.val_batch_size, 1, is_train=False)
         
         projection_f = partial(alfworld_projection)

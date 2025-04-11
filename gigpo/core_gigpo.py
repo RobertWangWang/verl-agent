@@ -8,8 +8,21 @@ import numpy as np
 import torch
 from collections import defaultdict
 from verl import DataProto
-import verl.utils.torch_functional as verl_F
 import uuid
+
+def to_hashable(x):
+    if isinstance(x, (int, float, str, bool)):
+        return x
+    elif isinstance(x, (np.integer, np.floating)):
+        return x.item()
+    elif isinstance(x, np.ndarray):
+        return tuple(x.flatten())
+    elif isinstance(x, (list, tuple)):
+        return tuple(to_hashable(e) for e in x)
+    elif isinstance(x, dict):
+        return tuple(sorted((k, to_hashable(v)) for k, v in x.items()))
+    else:
+        raise TypeError(f"Unsupported type: {type(x)}")
 
 def compute_step_discounted_returns(batch: DataProto, gamma: float):
     rewards = batch.non_tensor_batch['rewards'].astype(np.float32)
@@ -129,7 +142,7 @@ def build_step_group(raw_obs: np.array, index: np.array):
         # Create clusters for identical observations
         clusters = defaultdict(list)
         for i, obs in enumerate(obs_group):
-            clusters[obs].append(indices[i])  # Store the original index position
+            clusters[to_hashable(obs)].append(indices[i])  # Store the original index position
         
         # Assign unique step_group_uid to each cluster
         for obs, original_indices in clusters.items():
@@ -146,9 +159,7 @@ def build_step_group(raw_obs: np.array, index: np.array):
         missing_indices = np.where(step_group_uids == None)[0]
         raise ValueError(f"Failed to assign UIDs to all observations. Missing at indices: {missing_indices}")
     
-    print(f"Avg length of step_group_uids: {np.mean(group_length)}")
-    print(f"Max length of step_group_uids: {np.max(group_length)}")
-    print(f"Min length of step_group_uids: {np.min(group_length)}")
+    print(f"Avg length of step_group_uids: {np.mean(group_length)}, Max length of step_group_uids: {np.max(group_length)}, Min length of step_group_uids: {np.min(group_length)}")
     return step_group_uids
 
     
@@ -185,7 +196,7 @@ def step_group_reward(step_rewards: torch.Tensor,
 
         for idx in id2score:
             if len(id2score[idx]) == 1:
-                id2mean[idx] = torch.tensor(0.0)
+                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
                 id2std[idx] = torch.tensor(1.0)
             elif len(id2score[idx]) > 1:
                 id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
@@ -206,7 +217,9 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    eos_mask: torch.Tensor,
                                    raw_obs: np.array,
                                    index: np.array,
-                                   epsilon: float = 1e-6):
+                                   epsilon: float = 1e-6,
+                                   step_advantage_w: float = 0.8,
+                                   ):
     
     # Compute episode_group_reward
     episode_advantages = episode_group_reward(token_level_rewards, eos_mask, index, epsilon)
@@ -217,5 +230,5 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
     # Compute step_group_reward
     step_advantages = step_group_reward(step_rewards, eos_mask, step_group_uids, epsilon)
 
-    scores = episode_advantages + step_advantages
+    scores = episode_advantages + step_advantage_w * step_advantages
     return scores, scores

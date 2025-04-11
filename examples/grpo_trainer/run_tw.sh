@@ -4,7 +4,7 @@ export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
+    algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/alfworld/tw/zero_shot/train.parquet \
     data.val_files=$HOME/data/alfworld/tw/zero_shot/test.parquet \
     data.train_batch_size=16 \
@@ -28,11 +28,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=32 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.name=$ENGINE \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=32 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
@@ -44,11 +43,11 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=8 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_group_AlfredTWEnv' \
-    trainer.experiment_name='zeroshot_qwen_2_5_1_5b_grpo_new' \
+    trainer.project_name='verl_AlfredTWEnv' \
+    trainer.experiment_name='qwen_2_5_1_5b_grpo' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
     trainer.test_freq=10 \
-    trainer.total_epochs=100 \
-    trainer.val_before_train=True $@
+    trainer.total_epochs=200 \
+    trainer.val_before_train=False $@
