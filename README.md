@@ -1,3 +1,17 @@
+<h1 style="text-align: center;">verl-agent</h1>
+
+# Verl Installation
+```bash
+conda create -n verl python==3.12
+conda activate verl
+pip3 install flash-attn --no-build-isolation
+pip3 install -e .
+pip3 install vllm==0.8.2
+```
+
+# Environment Installation
+For detailed environment setup instructions, please refer to the [README.md](agent_system/environments/README.md)
+
 <h1 style="text-align: center;">verl: Volcano Engine Reinforcement Learning for LLM</h1>
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/volcengine/verl)](https://github.com/volcengine/verl/stargazers)
@@ -69,15 +83,6 @@ verl is fast with:
 ## Getting Started
 
 <a href="https://verl.readthedocs.io/en/latest/index.html"><b>Documentation</b></a>
-
-```bash
-conda create -n verl python==3.12
-conda activate verl
-pip3 install flash-attn --no-build-isolation
-pip3 install -e .
-pip3 uninstall torch
-pip3 install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-```
 
 **Quickstart:**
 - [Installation](https://verl.readthedocs.io/en/latest/start/install.html)

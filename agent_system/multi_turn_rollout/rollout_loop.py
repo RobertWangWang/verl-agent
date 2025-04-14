@@ -4,7 +4,6 @@ import numpy as np
 from verl import DataProto
 from verl.utils.dataset.rl_dataset import collate_fn
 from verl.utils.model import compute_position_id_with_mask
-from agent_system.multi_turn_rollout.prompt import TEXT_AUXILIARY_START, OBS_TEXT_START, OBS_IMAGE_START, PRE_ACTION_START
 import verl.utils.torch_functional as verl_F
 from transformers import PreTrainedTokenizer
 import uuid
@@ -33,8 +32,6 @@ class TrajectoryCollector:
         item: int,
         gen_batch: DataProto,
         obs: Dict,
-        pre_batch_output: DataProto = None,
-        use_action: bool = False,
     ):
         """
         Process a single observation sample, organizing environment observations (text and/or images) 
@@ -45,8 +42,6 @@ class TrajectoryCollector:
             config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
             obs (Dict): Environment observation, may contain 'text', 'image', 'raw' keys
-            pre_batch_output (DataProto, optional): Output from previous batch, used to get previous action
-            use_action (bool): Whether to use previous action
         
         Returns:
             dict: Contains processed input data such as input_ids, attention_mask, etc.
@@ -66,33 +61,10 @@ class TrajectoryCollector:
 
         _obs_raw = torch_to_numpy(obs_raw, is_object=True) if isinstance(obs_raw, torch.Tensor) else obs_raw
 
-        # Get previous action
-        pre_action = None
-        if pre_batch_output is not None and use_action:
-            pre_action = self.tokenizer.decode(pre_batch_output.batch['responses'][item], skip_special_tokens=True)
-        
         # Build chat structure
         obs_content = raw_prompt[0]['content']
-
-        # check if <image> is in the obs_content
-        if '<image>' in obs_content:
-            # print('\033[93m' + 'Warning: <image> placeholder found in the system prompt. Please make sure to replace it with the actual image data.' + '\033[0m')
-            obs_content = obs_content.replace('<image>', '')
-
-        # Build obs content
-        if obs_text is not None or pre_action is not None:
-            # obs_content += TEXT_AUXILIARY_START
-            # Add text observation if exists
-            if obs_text is not None:
-                # obs_content += OBS_TEXT_START
-                obs_content += obs_text
-            # Add previous action if exists
-            if pre_action is not None:
-                obs_content += PRE_ACTION_START
-                obs_content += pre_action
-        # Add image placeholder if multimodal
-        if is_multi_modal:
-            obs_content = OBS_IMAGE_START + obs_content
+        if obs_text is not None:
+            obs_content += obs_text
         
         chat = np.array([{
             "content": obs_content,
@@ -176,7 +148,6 @@ class TrajectoryCollector:
         config,
         gen_batch: DataProto, 
         obs: Dict, 
-        pre_batch_output: DataProto = None,
     ) -> DataProto:
         """
         Process a batch of observation samples, converting environment observations into model-processable format.
@@ -188,7 +159,6 @@ class TrajectoryCollector:
                 - 'text' (None or List[str]): Text observation data
                 - 'image' (np.ndarray or torch.Tensor): Image observation data
                 - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
-            pre_batch_output (DataProto, optional): Output from previous batch
         
         Returns:
             DataProto: Contains processed batch data with preserved metadata
@@ -204,7 +174,6 @@ class TrajectoryCollector:
                 item=item,
                 gen_batch=gen_batch,
                 obs=obs,
-                pre_batch_output=pre_batch_output,
             )
             processed_samples.append(processed)
         
@@ -345,7 +314,6 @@ class TrajectoryCollector:
             batch = self.preprocess_batch(config=config,
                                             gen_batch=gen_batch,
                                             obs=obs,
-                                            pre_batch_output=batch_output,
                                             )
 
             if 'multi_modal_inputs' in batch.non_tensor_batch.keys():
