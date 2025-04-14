@@ -89,9 +89,9 @@ def build_gymcards_envs(env_name,
                   env_num,
                   group_n,
                   log_dir,
-                  device,
-                  allow_early_resets,
-                  num_frame_stack=None,
+                  device='cpu',
+                  allow_early_resets=False,
+                  num_frame_stack=1,
                   use_cnn=False):
     num_processes = env_num * group_n
     envs = [
