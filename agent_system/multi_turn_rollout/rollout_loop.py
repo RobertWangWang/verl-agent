@@ -63,6 +63,9 @@ class TrajectoryCollector:
 
         # Build chat structure
         obs_content = raw_prompt[0]['content']
+        if '<image>' in obs_content: 
+            obs_content = obs_content.replace('<image>', '')
+
         if obs_text is not None:
             obs_content += obs_text
         

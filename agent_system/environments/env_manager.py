@@ -162,25 +162,39 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 
 
 class SokobanEnvironmentManager(EnvironmentManagerBase):
+    ACTION_LOOKUP = {
+        0: "Still",
+        1: "Up",
+        2: "Down",
+        3: "Left",
+        4: "Right",
+    }
     def __init__(self, envs, projection_f, env_name):
         self.is_multi_modal = envs.mode == 'rgb_array'
+        self.buffers = None
         super().__init__(envs, projection_f, env_name)
 
     def reset(self):
         obs, infos = self.envs.reset()
         if self.is_multi_modal:
             obs = np.array(obs, obs[0].dtype)
+            self.pre_text_obs = self.envs.render(mode='tiny_rgb_array')
             observations = {
-                'text': self.build_text_obs(infos), 
+                'text': self.build_text_obs(infos, init=True), 
                 'image': obs,   
                 'raw': obs
             }
         else:
+            self.pre_text_obs = obs
             observations = {
-                'text': self.build_text_obs(infos, obs),
+                'text': self.build_text_obs(infos, obs, init=True),
                 'image': None,
                 'raw': obs
             }
+        # initialize the history buffer
+        if self.buffers is not None:
+            del self.buffers
+        self.buffers = [[] for _ in range(len(infos))]
         return observations, infos
 
     def step(self, text_actions: List[str]):
@@ -193,12 +207,16 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
 
         if self.is_multi_modal:
             next_obs = np.array(next_obs, next_obs[0].dtype)
+            self.save_to_history_buffer(self.pre_text_obs, actions)
+            self.pre_text_obs = self.envs.render(mode='tiny_rgb_array')
             next_observations = {
                 'text': self.build_text_obs(infos),  
                 'image': next_obs,
                 'raw': next_obs 
             }
         else:
+            self.save_to_history_buffer(self.pre_text_obs, actions)
+            self.pre_text_obs = next_obs
             next_observations = {
                 'text': self.build_text_obs(infos, next_obs),  
                 'image': None, 
@@ -210,22 +228,49 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
 
         return next_observations, rewards, dones, infos
 
-    def build_text_obs(self, infos, text_obs: List[str]=None) -> List[str]:
+    def build_text_obs(self, infos, text_obs: List[str]=None, init: bool = False, history_length: int = 3) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
         postprocess_text_obs = []
         for i in range(len(infos)):
-            if self.is_multi_modal:
-                obs = SOKOBAN_VISUAL_TEMPLATE
-            else:
-                assert text_obs is not None, "text_obs should not be None when is_multi_modal is False"
-                obs = SOKOBAN_TEMPLATE.format(
+            if init:
+                obs = SOKOBAN_VISUAL_INIT_TEMPLATE if self.is_multi_modal \
+                 else SOKOBAN_INIT_TEMPLATE.format(
                     current_observation=text_obs[i],
                 )
+            else:
+                # Get last `history_length` steps
+                recent_history = self.buffers[i][-history_length:]
+                valid_history_length = len(recent_history)
+                start_index = len(self.buffers[i]) - valid_history_length
+                action_history = ""
+                for j, record in enumerate(recent_history):
+                    step_number = start_index + j + 1
+                    action_history += f"[Text Observation {step_number}: \n{record["text_obs"]},\nAction {step_number}: '{record["action"]}']"
+
+                if self.is_multi_modal:
+                    obs = SOKOBAN_VISUAL_TEMPLATE.format(
+                        step_count=len(self.buffers[i]),
+                        history_length=valid_history_length,
+                        action_history=action_history.strip(),
+                        current_step=len(self.buffers[i]) + 1,
+                    )
+                else:
+                    obs = SOKOBAN_TEMPLATE.format(
+                        step_count=len(self.buffers[i]),
+                        history_length=valid_history_length,
+                        action_history=action_history.strip(),
+                        current_step=len(self.buffers[i]) + 1,
+                        current_observation=text_obs[i],
+                    )
             postprocess_text_obs.append(obs)
 
         return postprocess_text_obs
+
+    def save_to_history_buffer(self, text_obs, actions):
+        for i in range(len(actions)):
+            self.buffers[i].append({'text_obs': text_obs[i], 'action': self.ACTION_LOOKUP[actions[i]]})
 
     def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         total_infos = kwargs['total_infos']

@@ -49,10 +49,11 @@ python3 -m verl.trainer.main_ppo \
     env.env_name=Sokoban \
     env.max_steps=20 \
     env.rollout.n=5 \
+    env.sokoban.dim_room="[6,6]" \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban_6x6_20step' \
-    trainer.experiment_name='qwen_2_5_1_5b_gigpo_n5_w1_gamma0_95' \
+    trainer.project_name='verl_sokoban' \
+    trainer.experiment_name='6x6_text_qwen_2_5_1_5b_gigpo_n5_w1_gamma0_95_step20' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
