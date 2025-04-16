@@ -2,8 +2,8 @@
 
 # Verl Installation
 ```bash
-conda create -n verl python==3.12
-conda activate verl
+conda create -n verl-agent python==3.12 -y
+conda activate verl-agent
 pip3 install flash-attn --no-build-isolation
 pip3 install -e .
 pip3 install vllm==0.8.2
@@ -11,6 +11,8 @@ pip3 install vllm==0.8.2
 
 # Environment Installation
 For detailed environment setup instructions, please refer to the [README.md](agent_system/environments/README.md)
+
+---
 
 <h1 style="text-align: center;">verl: Volcano Engine Reinforcement Learning for LLM</h1>
 

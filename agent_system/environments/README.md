@@ -46,3 +46,34 @@ pip3 install -e ./agent_system/environments/env_package/gym_cards/gym-cards/
 pip3 install gymnasium==0.29.1
 pip3 install stable-baselines3==2.6.0
 ```
+
+## APPWorld
+Install APPWorld package in `verl-agent` (some warnings may be raised, you can ignore them)
+```bash
+cd repo_root/
+cd ./agent_system/environments/env_package/appworld/appworld
+pip install .
+python -m appworld.cli install
+appworld download data
+
+cd repo_root/
+appworld download data
+```
+
+Refresh dependencies in the `verl-agent` environment:
+```bash
+cd repo_root/
+pip install -e .
+pip install vllm==0.8.2
+```
+You can ignore the warning of incompatiblity for appworld, because we don't run appworld in `verl-agent` environment.
+
+Create a Dedicated Conda Environment `appworld` for the APPWorld Server:
+```bash
+conda create -n appworld python=3.12 -y
+conda activate appworld
+
+cd ./agent_system/environments/env_package/appworld/appworld
+pip install .
+python -m appworld.cli install
+```

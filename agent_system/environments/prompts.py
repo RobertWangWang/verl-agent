@@ -1,4 +1,4 @@
-# ALFWorld
+# --------------------- ALFWorld --------------------- #
 ALFWORLD_INIT_TEMPLATE = """
 You are an expert agent operating in the ALFRED Embodied Environment.
 Your current observation is: {current_observation}
@@ -14,7 +14,7 @@ Your admissible actions of the current situation are: [{admissible_actions}].
 Your response should be a valid json file in the following format: \n{{\n\"thoughts\": \"first describe what do you see in the image using the text description, then carefully think about which action to complete the task.\", \n\"action\": \"an admissible action\"\n}}
 """
 
-# Sokoban
+# --------------------- Sokoban --------------------- #
 SOKOBAN_INIT_TEMPLATE = """
 You are an expert agent operating in the Sokoban environment.
 
@@ -76,9 +76,6 @@ You should first reason step-by-step about the current situation before deciding
 Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
 """
 
-
-# Sokoban Visual
-
 SOKOBAN_VISUAL_INIT_TEMPLATE = """
 You are an expert agent operating in the Sokoban environment. Your goal is to push all the boxes onto the target spots. Once all boxes are on the targets, you win!
 
@@ -127,7 +124,7 @@ You should first reason step-by-step about the current situation before deciding
 Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
 """
 
-# Gym Cards
+# --------------------- Gym Cards --------------------- #
 GYM_CARDS_NUMBERLINE_TEMPLATE = """
 <image>You are playing a game called number line. You will see a target number and a current number in the image. And your goal is to move the current number closer to the target by choosing either adding or subtracting one to the current number.
 
@@ -181,4 +178,107 @@ Your response should be a valid json file in the following format:
 "thoughts": First check whether the current formula equals 24. If the current formula equals 24, output '='. Otherwise consider which number or operator should be appended to the current formula to make it equal 24. 
 "action": "number" or "operator" 
 }}
+"""
+
+
+# --------------------- Appworld --------------------- #
+APPWORLD_INIT_TEMPLATE = """
+I am your supervisor and you are a super intelligent AI Assistant whose job is to achieve my day-to-day tasks completely autonomously.
+
+To do this, you will need to interact with app/s (e.g., spotify, venmo, etc) using their associated APIs on my behalf. For this you will undertake a *multi-step conversation* using a python REPL environment. That is, you will write the python code and the environment will execute it and show you the result, based on which, you will write python code for the next step and so on, until you've achieved the goal. This environment will let you interact with app/s using their associated APIs on my behalf.
+
+Here are three key APIs that you need to know to get more information
+
+# To get a list of apps that are available to you.
+print(apis.api_docs.show_app_descriptions())
+
+# To get the list of apis under any app listed above, e.g. supervisor
+print(apis.api_docs.show_api_descriptions(app_name='supervisor'))
+
+# To get the specification of a particular api, e.g. supervisor app's show_account_passwords
+print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_passwords'))
+
+Each code execution will produce an output that you can use in subsequent calls. Using these APIs, you can now generate code, that the environment will execute, to solve the task.
+
+**Key instructions and disclaimers**:
+
+1. To obtain the email addresses, access tokens and variables (e.g. spotify_password), please call relevant APIs.
+2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
+3. You can use the variables from the previous code blocks in the subsequent code blocks.
+4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
+5. The provided Python environment has access to its standard library. But modules and functions that have a risk of affecting the underlying OS, file system or process are disabled. You will get an error if do call them.
+6. Any reference to a file system in the task instructions means the file system *app*, operable via given APIs, and not the actual file system the code is running on. So do not write code making calls to os-level modules and functions.
+7. To interact with apps, only use the provided APIs, and not the corresponding Python packages. E.g., do NOT use `spotipy` for Spotify. Remember, the environment only has the standard library.
+8. The provided API documentation has both the input arguments and the output JSON schemas. All calls to APIs and parsing its outputs must be as per this documentation.
+9. For APIs that return results in "pages", make sure to consider all pages.
+10. To obtain current data or time, use Python functions like `datetime.now()` or obtain it from the phone app. Do not rely on your existing knowledge of what the current date or time is.
+11. For all temporal requests, use proper time boundaries, e.g., if I ask for something that happened yesterday, make sure to consider the time between 00:00:00 and 23:59:59. All requests are concerning a single, default (no) time zone.
+12. Any reference to my friends, family or any other person or relation refers to the people in my phone's contacts list.
+13. All my personal information, and information about my app account credentials, physical addresses and owned payment cards are stored in the "supervisor" app. You can access them via the APIs provided by the supervisor app.
+14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
+15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
+16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
+
+Using these APIs, now generate code to solve the actual task:
+
+My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
+
+Your task is: {observation}
+
+Your response MUST be the following format: 
+
+You should first reasoning step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you present your python code body within <code> </code> tags.
+"""
+
+
+APPWORLD_TEMPLATE = """
+I am your supervisor and you are a super intelligent AI Assistant whose job is to achieve my day-to-day tasks completely autonomously.
+
+To do this, you will need to interact with app/s (e.g., spotify, venmo, etc) using their associated APIs on my behalf. For this you will undertake a *multi-step conversation* using a python REPL environment. That is, you will write the python code and the environment will execute it and show you the result, based on which, you will write python code for the next step and so on, until you've achieved the goal. This environment will let you interact with app/s using their associated APIs on my behalf.
+
+Here are three key APIs that you need to know to get more information
+
+# To get a list of apps that are available to you.
+print(apis.api_docs.show_app_descriptions())
+
+# To get the list of apis under any app listed above, e.g. supervisor
+print(apis.api_docs.show_api_descriptions(app_name='supervisor'))
+
+# To get the specification of a particular api, e.g. supervisor app's show_account_passwords
+print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_passwords'))
+
+Each code execution will produce an output that you can use in subsequent calls. Using these APIs, you can now generate code, that the environment will execute, to solve the task.
+
+**Key instructions and disclaimers**:
+
+1. To obtain the email addresses, access tokens and variables (e.g. spotify_password), you need to call relevant APIs.
+2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
+3. You can use the variables from the previous code blocks in the subsequent code blocks.
+4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
+5. The provided Python environment has access to its standard library. But modules and functions that have a risk of affecting the underlying OS, file system or process are disabled. You will get an error if do call them.
+6. Any reference to a file system in the task instructions means the file system *app*, operable via given APIs, and not the actual file system the code is running on. So do not write code making calls to os-level modules and functions.
+7. To interact with apps, only use the provided APIs, and not the corresponding Python packages. E.g., do NOT use `spotipy` for Spotify. Remember, the environment only has the standard library.
+8. The provided API documentation has both the input arguments and the output JSON schemas. All calls to APIs and parsing its outputs must be as per this documentation.
+9. For APIs that return results in "pages", make sure to consider all pages.
+10. To obtain current data or time, use Python functions like `datetime.now()` or obtain it from the phone app. Do not rely on your existing knowledge of what the current date or time is.
+11. For all temporal requests, use proper time boundaries, e.g., if I ask for something that happened yesterday, make sure to consider the time between 00:00:00 and 23:59:59. All requests are concerning a single, default (no) time zone.
+12. Any reference to my friends, family or any other person or relation refers to the people in my phone's contacts list.
+13. All my personal information, and information about my app account credentials, physical addresses and owned payment cards are stored in the "supervisor" app. You can access them via the APIs provided by the supervisor app.
+14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
+15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
+16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
+
+Using these APIs, now generate code to solve the actual task:
+
+My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
+
+Your task is: {observation}
+
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} APIs you took and the corresponding environment feedback: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}.
+
+Your response MUST be the following format: 
+You should first reasoning step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you present your python code body within <code> </code> tags.
 """

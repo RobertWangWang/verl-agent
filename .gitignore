@@ -129,3 +129,8 @@ log
 # nohup
 *.out
 outputs
+
+# appworld
+data/
+.tmp
+

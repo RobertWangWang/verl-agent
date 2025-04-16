@@ -347,6 +347,117 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
             postprocess_text_obs.append(obs)
         return postprocess_text_obs
 
+class AppWorldEnvironmentManager(EnvironmentManagerBase):
+    def __init__(self, envs, projection_f, env_name):
+        self.buffers = None
+        super().__init__(envs, projection_f, env_name)
+    
+    def reset(self):
+        text_obs, infos = self.envs.reset()
+        
+        self.supervisors = [info['supervisor'] for info in infos]
+        # initialize the history buffer
+        if self.buffers is not None:
+            del self.buffers
+        self.buffers = [[] for _ in range(len(text_obs))]
+        self.tasks = text_obs.copy()
+
+        full_text_obs = self.build_text_obs(text_obs, init=True)
+        return {'text': full_text_obs, 'image': None, 'raw': text_obs}, infos
+    
+    def step(self, text_actions: List[str]):
+        actions, valids = self.projection_f(text_actions)
+
+        text_obs, rewards, dones, infos = self.envs.step(actions)
+
+        self.save_to_history_buffer(actions, text_obs)
+
+        full_text_obs = self.build_text_obs(text_obs)
+
+        # add action_valid to infos
+        for i, info in enumerate(infos):
+            info['is_action_valid'] = to_numpy(valids[i])
+
+        next_observations = {'text': full_text_obs, 'image': None, 'raw': text_obs}
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+
+        return next_observations, rewards, dones, infos
+    
+
+    def build_text_obs(self, text_obs: List[str], init: bool = False, history_length: int = 5) -> List[str]:
+        """
+        This function builds the text observation for the agent.
+        """
+        postprocess_text_obs = []
+        if init and self.supervisors is not None:
+            for i in range(len(text_obs)):
+                obs = APPWORLD_INIT_TEMPLATE.format(
+                        supervisor_first_name=self.supervisors[i]['first_name'],
+                        supervisor_last_name=self.supervisors[i]['last_name'],
+                        supervisor_email=self.supervisors[i]['email'],
+                        supervisor_phone_number=self.supervisors[i]['phone_number'],
+                        observation=text_obs[i],
+                    )
+                postprocess_text_obs.append(obs)
+        else:
+            for i in range(len(text_obs)):
+                # Get last `history_length` steps
+                recent_history = self.buffers[i][-history_length:]
+                valid_history_length = len(recent_history)
+                start_index = len(self.buffers[i]) - valid_history_length
+                action_history = ""
+                for j, record in enumerate(recent_history):
+                    step_number = start_index + j + 1
+                    action = record["action"]
+                    feedback = record["text_obs"]
+                    action_history += f"[API {step_number}: '{action}', Feedback {step_number}: '{feedback}']"
+
+                obs = APPWORLD_TEMPLATE.format(
+                        supervisor_first_name=self.supervisors[i]['first_name'],
+                        supervisor_last_name=self.supervisors[i]['last_name'],
+                        supervisor_email=self.supervisors[i]['email'],
+                        supervisor_phone_number=self.supervisors[i]['phone_number'],
+                        observation=text_obs[i],
+                        step_count=len(self.buffers[i]),
+                        history_length=valid_history_length,
+                        action_history=action_history.strip(),
+                        current_step=len(self.buffers[i]) + 1,
+                        current_observation=text_obs[i],
+                    )
+                postprocess_text_obs.append(obs)
+        return postprocess_text_obs
+
+    def save_to_history_buffer(self, actions, text_obs):
+        for i in range(len(actions)):
+            self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
+
+    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
+        total_infos = kwargs['total_infos']
+        total_batch_list = kwargs['total_batch_list']
+        batch_size = len(total_batch_list)
+        
+        success = defaultdict(list)
+        
+        for bs in range(batch_size):
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
+        assert len(success['main']) == batch_size
+        
+        # Convert lists to numpy arrays
+        return {key: np.array(value) for key, value in success.items()}
+
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        # Find the last entry with active masks
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                won_value = float(info['won'])
+                success['main'].append(won_value)
+                
+                return  # Exit after finding the first active mask
+
 
 def make_envs(config):
     """
@@ -395,13 +506,22 @@ def make_envs(config):
         envs = SokobanEnvironmentManager(_envs, projection_f, config.env.env_name)
         val_envs = SokobanEnvironmentManager(_val_envs, projection_f, config.env.env_name)
         return envs, val_envs
+    elif "appworld" in config.env.env_name.lower():
+        from agent_system.environments.env_package.appworld import build_appworld_envs, appworld_projection
+        _envs = build_appworld_envs(dataset_name='train', seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, start_server_id=0)
+        _val_envs = build_appworld_envs(dataset_name='test_normal', seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, start_server_id=config.data.train_batch_size*group_n)
+        
+        projection_f = partial(appworld_projection)
+        envs = AppWorldEnvironmentManager(_envs, projection_f, config.env.env_name)
+        val_envs = AppWorldEnvironmentManager(_val_envs, projection_f, config.env.env_name)
+        return envs, val_envs
     else:
         print("Environment not supported")
         exit(1)
 
 
 if __name__ == "__main__":
-    env_name = "sokoban"
+    env_name = "appworld"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
         env_num = 8
@@ -482,4 +602,39 @@ if __name__ == "__main__":
                 env_manager.save_image(obs['image'][0], i)
             if np.array(dones).any():
                 print("Episode completed")
+
+    elif env_name == "appworld":
+        # Test AppWorldEnvironmentManager
+        from agent_system.environments.env_package.appworld import appworld_projection
+        from agent_system.environments.env_package.appworld import build_appworld_envs
+        import time
+        env_num = 8
+        group_n = 8
+        time1 = time.time()
+        envs = build_appworld_envs(dataset_name='test_normal', max_interactions=50, seed=1, env_num=env_num, group_n=group_n)
+        # val_envs = build_alfworld_envs(alf_config_path, 1000, 4)
+        env_manager = AppWorldEnvironmentManager(envs, appworld_projection, 'appworld')
+        time2 = time.time()
+        print(f"env_num: {env_num}, group_n: {group_n}, init time: ", time2 - time1)
+        # val_env_manager = AlfWorldEnvironmentManager(val_envs, alfworld_projection, 'alfworld/AlfredTWEnv')
+        for k in range(10):
+            time1 = time.time()
+            obs, infos = env_manager.reset()
+            for i in range(20):
+                # get random actions from admissible 'valid' commands (not available for AlfredThorEnv)
+                print("step: ", i)
+                random_actions = ["print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_passwords'))" for i in range(len(obs['text']))]
+                # print(apis.api_docs.show_api_descriptions(app_name='supervisor'))
+                # step
+                obs, rewards, dones, infos = env_manager.step(random_actions)
+                if np.array(dones).any():
+                    print("Episode completed")
+
+                for k in range(len(infos)):
+                    assert infos[k]['won'] == False
+                if obs['image'] is not None:
+                    env_manager.save_image(obs['image'], i)
+                # print("obs['image'].shape: ", obs['image'].shape)
+            time2 = time.time()
+            print(f"env_num: {env_num}, group_n: {group_n}, Time elapsed: ", time2 - time1)
         print("completed")
