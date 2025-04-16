@@ -200,9 +200,109 @@ print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_p
 
 Each code execution will produce an output that you can use in subsequent calls. Using these APIs, you can now generate code, that the environment will execute, to solve the task.
 
+
+----------------------------------------------
+Here is an example:
+
+Environment:
+My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
+
+Your task is: What is the password for my Spotify account?
+
+You:
+<think>Okay. Lets first find which apps are available to get the password by looking at the app descriptions.</think>
+<code>print(apis.api_docs.show_app_descriptions())</code>
+
+Environment:
+[
+  {{
+    "name": "api_docs",
+    "description": "An app to search and explore API documentation."
+  }},
+  {{
+    "name": "supervisor",
+    "description": "An app to access supervisor's personal information, account credentials, addresses, payment cards, and manage the assigned task."
+  }},
+  ...
+  {{
+    "name": "spotify",
+    "description": "A music streaming app to stream songs and manage song, album and playlist libraries."
+  }},
+  {{
+    "name": "venmo",
+    "description": "A social payment app to send, receive and request money to and from others."
+  }},
+  ...
+]
+
+You:
+<think>Looks like the supervisor app could help me with that. Lets see what apis are available under this app.</think>
+<code>print(apis.api_docs.show_api_descriptions(app_name='supervisor'))</code>
+
+Environment:
+[
+  ...
+  "show_account_passwords : Show your supervisor's account passwords."
+  ...
+]
+
+You:
+<think>I can use `show_account_passwords` to get the passwords. Let me see its detailed specification to understand its arguments and output structure.</think>
+<code>print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_passwords'))</code>
+
+Environment:
+{{
+  'app_name': 'supervisor',
+  'api_name': 'show_account_passwords',
+  'path': '/account_passwords',
+  'method': 'GET',
+  'description': "Show your supervisor's app account passwords.",
+  'parameters': [],
+  'response_schemas': {{
+    'success': [{{'account_name': 'string', 'password': 'string'}}],
+    'failure': {{'message': 'string'}}
+  }}
+}}
+
+You:
+<think>Okay, it requires no arguments. So I can just call it directly.</think>
+<code>print(apis.supervisor.show_account_passwords())</code>
+
+Environment:
+[
+  {{
+    "account_name": "spotify",
+    "password": "dummy_spotify_pass"
+  }},
+  {{
+    "account_name": "file_system",
+    "password": "dummy_fs_pass"
+  }},
+  ...
+]
+
+
+You:
+<think>So the Spotify password is an entry in the `passwords` list with the account_name=spotify.</think>
+<code>spotify_password = [account_password["account_name"] == "spotify" for account_password in passwords][0]["password"]
+print(spotify_password)</code>
+
+
+Environment:
+dummy_spotify_pass
+
+You:
+<think>When the task is completed, I need to call apis.supervisor.complete_task(). If there is an answer, I need to pass it as an argument `answer`. I will pass the spotify_password as an answer.</think>
+<code>apis.supervisor.complete_task(answer=spotify_password)</code>
+
+Environment:
+Marked the active task complete.
+
+----------------------------------------------
+
 **Key instructions and disclaimers**:
 
-1. To obtain the email addresses, access tokens and variables (e.g. spotify_password), please call relevant APIs.
+1. The email addresses, access tokens and variables (e.g. spotify_password) in the example above were only for demonstration. Obtain the correct information by calling relevant APIs yourself.
 2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
 3. You can use the variables from the previous code blocks in the subsequent code blocks.
 4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
@@ -218,6 +318,7 @@ Each code execution will produce an output that you can use in subsequent calls.
 14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
 15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
 16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
+17. You must make all decisions completely autonomously and not ask for any clarifications or confirmations from me or anyone else.
 
 Using these APIs, now generate code to solve the actual task:
 
@@ -225,10 +326,9 @@ My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is
 
 Your task is: {observation}
 
-Your response MUST be the following format: 
-
-You should first reasoning step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you present your python code body within <code> </code> tags.
+Now it's your turn to generate code to solve the task.
+You should first reason step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you present the solution code body within <code> </code> tags.
 """
 
 
@@ -250,9 +350,109 @@ print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_p
 
 Each code execution will produce an output that you can use in subsequent calls. Using these APIs, you can now generate code, that the environment will execute, to solve the task.
 
+
+----------------------------------------------
+Here is an example:
+
+Environment:
+My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
+
+Your task is: What is the password for my Spotify account?
+
+You:
+<think>Okay. Lets first find which apps are available to get the password by looking at the app descriptions.</think>
+<code>print(apis.api_docs.show_app_descriptions())</code>
+
+Environment:
+[
+  {{
+    "name": "api_docs",
+    "description": "An app to search and explore API documentation."
+  }},
+  {{
+    "name": "supervisor",
+    "description": "An app to access supervisor's personal information, account credentials, addresses, payment cards, and manage the assigned task."
+  }},
+  ...
+  {{
+    "name": "spotify",
+    "description": "A music streaming app to stream songs and manage song, album and playlist libraries."
+  }},
+  {{
+    "name": "venmo",
+    "description": "A social payment app to send, receive and request money to and from others."
+  }},
+  ...
+]
+
+You:
+<think>Looks like the supervisor app could help me with that. Lets see what apis are available under this app.</think>
+<code>print(apis.api_docs.show_api_descriptions(app_name='supervisor'))</code>
+
+Environment:
+[
+  ...
+  "show_account_passwords : Show your supervisor's account passwords."
+  ...
+]
+
+You:
+<think>I can use `show_account_passwords` to get the passwords. Let me see its detailed specification to understand its arguments and output structure.</think>
+<code>print(apis.api_docs.show_api_doc(app_name='supervisor', api_name='show_account_passwords'))</code>
+
+Environment:
+{{
+  'app_name': 'supervisor',
+  'api_name': 'show_account_passwords',
+  'path': '/account_passwords',
+  'method': 'GET',
+  'description': "Show your supervisor's app account passwords.",
+  'parameters': [],
+  'response_schemas': {{
+    'success': [{{'account_name': 'string', 'password': 'string'}}],
+    'failure': {{'message': 'string'}}
+  }}
+}}
+
+You:
+<think>Okay, it requires no arguments. So I can just call it directly.</think>
+<code>print(apis.supervisor.show_account_passwords())</code>
+
+Environment:
+[
+  {{
+    "account_name": "spotify",
+    "password": "dummy_spotify_pass"
+  }},
+  {{
+    "account_name": "file_system",
+    "password": "dummy_fs_pass"
+  }},
+  ...
+]
+
+
+You:
+<think>So the Spotify password is an entry in the `passwords` list with the account_name=spotify.</think>
+<code>spotify_password = [account_password["account_name"] == "spotify" for account_password in passwords][0]["password"]
+print(spotify_password)</code>
+
+
+Environment:
+dummy_spotify_pass
+
+You:
+<think>When the task is completed, I need to call apis.supervisor.complete_task(). If there is an answer, I need to pass it as an argument `answer`. I will pass the spotify_password as an answer.</think>
+<code>apis.supervisor.complete_task(answer=spotify_password)</code>
+
+Environment:
+Marked the active task complete.
+
+----------------------------------------------
+
 **Key instructions and disclaimers**:
 
-1. To obtain the email addresses, access tokens and variables (e.g. spotify_password), you need to call relevant APIs.
+1. The email addresses, access tokens and variables (e.g. spotify_password) in the example above were only for demonstration. Obtain the correct information by calling relevant APIs yourself.
 2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
 3. You can use the variables from the previous code blocks in the subsequent code blocks.
 4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
@@ -268,6 +468,7 @@ Each code execution will produce an output that you can use in subsequent calls.
 14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
 15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
 16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
+17. You must make all decisions completely autonomously and not ask for any clarifications or confirmations from me or anyone else.
 
 Using these APIs, now generate code to solve the actual task:
 
@@ -278,7 +479,7 @@ Your task is: {observation}
 Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} APIs you took and the corresponding environment feedback: {action_history}
 You are now at step {current_step} and your current observation is: {current_observation}.
 
-Your response MUST be the following format: 
-You should first reasoning step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you present your python code body within <code> </code> tags.
+Now it's your turn to generate code to solve the task.
+You should first reason step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you present the solution code body within <code> </code> tags.
 """

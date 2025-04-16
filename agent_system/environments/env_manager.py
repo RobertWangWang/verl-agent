@@ -385,7 +385,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         return next_observations, rewards, dones, infos
     
 
-    def build_text_obs(self, text_obs: List[str], init: bool = False, history_length: int = 5) -> List[str]:
+    def build_text_obs(self, text_obs: List[str], init: bool = False, history_length: int = 3) -> List[str]:
         """
         This function builds the text observation for the agent.
         """

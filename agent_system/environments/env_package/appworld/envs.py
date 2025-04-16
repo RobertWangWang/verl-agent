@@ -17,7 +17,6 @@ def worker_func(remote, id, max_interactions):
 
     url_id = 8000 + id
     url = f"http://0.0.0.0:{url_id}"
-    print("url:", url)
 
     while True:
         cmd, data = remote.recv()
