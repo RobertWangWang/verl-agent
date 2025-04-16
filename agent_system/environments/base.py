@@ -4,16 +4,16 @@ import numpy as np
 import os
 from agent_system.environments.prompts import *
 
-def to_numpy(tensor):
-    if isinstance(tensor, torch.Tensor):
-        tensor = tensor.detach().cpu().numpy()
-    elif isinstance(tensor, np.ndarray):
+def to_numpy(data):
+    if isinstance(data, torch.Tensor):
+        data = data.detach().cpu().numpy()
+    elif isinstance(data, np.ndarray):
         pass
-    elif isinstance(tensor, (int, float, bool, Tuple, List)):
-        tensor = np.array(tensor)
+    elif isinstance(data, (int, float, bool, Tuple, List)):
+        data = np.array(data)
     else:
-        raise ValueError(f"Unsupported type: {type(tensor)})")
-    return tensor
+        raise ValueError(f"Unsupported type: {type(data)})")
+    return data
 
 class EnvironmentManagerBase:
     def __init__(self, envs, projection_f, env_name=None):
@@ -73,6 +73,9 @@ class EnvironmentManagerBase:
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+        
         return next_observations, rewards, dones, infos
 
     def build_text_obs(self,) -> List[str]:

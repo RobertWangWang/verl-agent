@@ -305,11 +305,9 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         super().__init__(envs, projection_f, env_name)
     
     def reset(self) -> Dict[str, Any]:
-        obs = self.envs.reset()
-        infos = [None] * self.envs.num_envs
-        observations = {'text': self.build_text_obs(infos), 'image': obs, 'raw': obs.clone()}
-        if self.env_name == 'gym_cards/EZPoints-v0' or self.env_name == 'gym_cards/Points24-v0':
-            observations['text'] = ["The current formula is empty. Now it's your turn to choose a number or operator as the beginning of the formula."] * len(obs)
+        obs, infos = self.envs.reset()
+        # infos = [None] * self.envs.num_envs
+        observations = {'text': self.build_text_obs(infos), 'image': obs, 'raw': obs.copy()}
         
         return observations, infos
 
@@ -318,7 +316,7 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         
         # add text observation to next_observations
         next_observations['text'] = self.build_text_obs(infos)
-        next_observations['raw'] = next_observations['image'].clone()
+        next_observations['raw'] = next_observations['image'].copy()
 
         return next_observations, rewards, dones, infos
     
@@ -360,8 +358,8 @@ def make_envs(config):
     group_n = config.env.rollout.n if config.env.rollout.n > 0 else 1
     if "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        _envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n)
-        _val_envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1)
+        _envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, is_train=True)
+        _val_envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
         
         projection_f = partial(gym_projection, env_name=config.env.env_name)
         envs = GymCardEnvironmentManager(_envs, projection_f, config.env.env_name)
@@ -390,7 +388,6 @@ def make_envs(config):
             'max_steps': config.env.max_steps,
             'search_depth': config.env.sokoban.search_depth
         }
-        # breakpoint()
         _envs = build_sokoban_envs(config.env.seed, config.data.train_batch_size, group_n, mode=config.env.sokoban.mode, is_train=True, env_kwargs=env_kwargs)
         _val_envs = build_sokoban_envs(config.env.seed + 1000, config.data.val_batch_size, 1, mode=config.env.sokoban.mode, is_train=False, env_kwargs=env_kwargs)
         
@@ -410,9 +407,9 @@ if __name__ == "__main__":
         env_num = 8
         group_n = 5
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, env_num, group_n)
-        projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
-        env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
+        envs = build_gymcards_envs('gym_cards/Blackjack-v0', 0, env_num, group_n)
+        projection_f = partial(gym_projection, env_name='gym_cards/Blackjack-v0')
+        env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/Blackjack-v0')
         obs, infos = env_manager.reset()
         for i in range(100):
             random_actions = [str(np.random.randint(0, 10)) for i in range(len(infos))]

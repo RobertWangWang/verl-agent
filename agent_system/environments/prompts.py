@@ -135,17 +135,38 @@ Your response should be a valid json file in the following format: \n{\n\"curren
 """
 
 GYM_CARDS_BLACKJACK_TEMPLATE = """
-<image>You are an expert blackjack player helping to decide the optimal move based on the current game state. As shown in the image, you are given: 1. Player Cards: the cards that belong to you. 2. Dealer Cards: two cards that belong to the dealer (one is visible to you; the other remains unseen). \nGame Rules:\n1. Your goal is to beat the dealer by choosing between the actions: \"hit\" (draw another card) or \"stand\" (keep your current hand).\n2. The player whose cards number sum is closest to 21 (without exceeding) wins.\n3. If the sum of your cards exceeds 21, you bust and immediately lose.\n4. Number cards (2–10) are worth their face value. Face cards (J, Q, K) are each worth 10 points. An Ace (\"A\") counts as 1 or 11 (always choose the value that benefits you the most).\n You should try to increase your chances of winning by choosing \"hit\" as much as possible to get closer to 21. However, if you believe hitting will most likely cause you to bust, then you should choose \"stand\".
+<image>You are an expert blackjack player helping to decide the optimal action based on the current game state displayed in the image. 
 
-Your response should be a valid json file in the following format:\n{\n\"reasoning\": \"Reason step-by-step based on the current game state shown in the image and then determine your next action.\",\n\"action\": \"hit\" or \"stand\"\n}",
+From the image, you can see:
+- Dealer: two cards that belong to the dealer (one is visible; the other remains unseen).
+- Player (you): the cards that belong to you.
+
+Your goal is to make the best possible action to maximize your chances of beating the dealer without exceeding 21.
+Your admissible actions are ["hit", "stand"], where "hit" means taking another card and "stand" means keeping your current hand.
+
+Your response should be a valid json file in the following format:
+{{
+"thoughts": "Analyze the image to identify your cards and the dealer's visible card. Then, reason step-by-step based on standard blackjack strategy and the current game state to decide the best action.",
+"action": "an admissible action"
+}},
 """
 
 GYM_CARDS_EZPOINTS_TEMPLATE = """
-<image>You are an expert card game player helping to build a math formula that evaluates to 12 using onlt **two** playing cards. You can choose characters from ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '+', '*', '=']. Your goal is to extend the current (incomplete) formula, one character at a time, so that when completed, it evaluates to 12. You are shown an image containing two playing cards. Each card represents a number: 1. Number cards (2–10) equal their face value. 2. Face cards ('J', 'Q', and 'K') are all treated as '10'. \nImportant Rules: 1. You can only use the two numbers shown on the cards (no other numbers). 2. Each number can only be used **once** in the formula. 3. You must build the formula step by step, by adding ONE character (number or operator) at a time to the end of the current formula. 4. The appended character MUST ensure that the formula remains both mathematically valid and syntactically correct.
+<image>You are an expert card game player helping to build a math formula that evaluates to 12 using onlt **two** playing cards. You can choose characters from ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '+', '*', '=']. Your goal is to extend the current (incomplete) formula, one character at a time, so that when completed, it evaluates to 12. You are shown an image containing two playing cards. Each card represents a number: 1. Number cards (2–10) equal their face value. 2. Face cards ('J', 'Q', and 'K') are all treated as '10'. 
+
+Important Rules: 
+1. You can only use the two numbers shown on the cards (no other numbers). 
+2. Each number can only be used **once** in the formula. 
+3. You must build the formula step by step, by adding ONE character (number or operator) at a time to the end of the current formula. 
+4. The appended character MUST ensure that the formula remains both mathematically valid and syntactically correct.
 
 The current formula is {text_formula}. Now it's your turn to add a number or operator to the end of the formula.
 
-Your response MUST be a valid json file in the following format: {\n\"reasoning\": \"You should first describle the two numbers shown in the image and the current formula. Then step-by-step thinking which character (number or operator) should be added next based on the current formula and remaining numbers.\", \n\"action\": \"next character (number or operator) to append\"\n}
+Your response MUST be a valid json file in the following format: 
+{{
+"thoughts": "You should first describle the two numbers shown in the image and the current formula. Then step-by-step thinking which character (number or operator) should be added next based on the current formula and remaining numbers.",
+"action": "next character (number or operator) to append"
+}}
 """
 
 GYM_CARDS_POINTS24_TEMPLATE = """
@@ -153,5 +174,11 @@ GYM_CARDS_POINTS24_TEMPLATE = """
 
 The current formula is {text_formula}. Now it's your turn to add a number or operator to the end of the formula.
 
-Your response should be a valid json file in the following format: \\{\n \"cards\": [x, y, z, w], \n\"current formula\": , \n\"thoughts\": {First check whether the current formula equals 24. If the current formula equals 24, output '='. Otherwise consider which number or operator should be appended to the current formula to make it equal 24.} \n\"action\": \"{number}\" or \"{operator}\" \n \\}
+Your response should be a valid json file in the following format: 
+{{
+"cards": [x, y, z, w], 
+"current formula": ,
+"thoughts": First check whether the current formula equals 24. If the current formula equals 24, output '='. Otherwise consider which number or operator should be appended to the current formula to make it equal 24. 
+"action": "number" or "operator" 
+}}
 """
