@@ -88,7 +88,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_Appworld' \
-    trainer.experiment_name='qwen_2_5_1.5b_grpo_n5' \
+    trainer.experiment_name='qwen_2_5_1_5b_grpo_n5' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
