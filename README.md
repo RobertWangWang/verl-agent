@@ -12,6 +12,44 @@ pip3 install vllm==0.8.2
 # Environment Installation
 For detailed environment setup instructions, please refer to the [README.md](agent_system/environments/README.md)
 
+
+# Run
+
+### ALFWorld
+
+```bash
+bash examples/gigpo_trainer/run_alfworld.sh
+```
+
+```bash
+bash examples/grpo_trainer/run_alfworld.sh
+```
+
+### Sokoban
+
+```bash
+bash examples/gigpo_trainer/run_sokoban_visual.sh
+```
+
+```bash
+bash examples/grpo_trainer/run_sokoban_visual.sh
+```
+
+### Gym Cards
+
+```bash
+bash examples/gigpo_trainer/run_numberline.sh
+```
+
+```bash
+bash examples/grpo_trainer/run_numberline.sh
+```
+
+### Appworld
+```bash
+bash examples/grpo_trainer/run_appworld.sh
+``` 
+
 ---
 
 <h1 style="text-align: center;">verl: Volcano Engine Reinforcement Learning for LLM</h1>
