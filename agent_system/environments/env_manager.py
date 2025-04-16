@@ -411,7 +411,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                     step_number = start_index + j + 1
                     action = record["action"]
                     feedback = record["text_obs"]
-                    action_history += f"[API {step_number}: '{action}', Feedback {step_number}: '{feedback}']"
+                    action_history += f"[Code {step_number}: '{action}', Feedback {step_number}: '{feedback}']"
 
                 obs = APPWORLD_TEMPLATE.format(
                         supervisor_first_name=self.supervisors[i]['first_name'],
