@@ -123,11 +123,9 @@ class AppWorldEnvs:
         """
         assert len(actions) == self.num_processes, "The length of actions must match the number of processes."
 
-        # 1) 将 step 命令与 action 分发给各个子进程
         for i, remote in enumerate(self.parent_remotes):
             remote.send(('step', actions[i]))
 
-        # 2) 收集各个子进程的返回
         obs_list = []
         reward_list = []
         done_list = []

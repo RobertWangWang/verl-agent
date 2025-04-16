@@ -204,7 +204,6 @@ Each code execution will produce an output that you can use in subsequent calls.
 ----------------------------------------------
 Here is an example:
 
-Environment:
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
 Your task is: What is the password for my Spotify account?
@@ -324,7 +323,7 @@ Using these APIs, now generate code to solve the actual task:
 
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
-Your task is: {observation}
+Your task is: {task_description}
 
 Now it's your turn to generate code to solve the task.
 You should first reason step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
@@ -354,7 +353,6 @@ Each code execution will produce an output that you can use in subsequent calls.
 ----------------------------------------------
 Here is an example:
 
-Environment:
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
 Your task is: What is the password for my Spotify account?
@@ -474,7 +472,7 @@ Using these APIs, now generate code to solve the actual task:
 
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
-Your task is: {observation}
+Your task is: {task_description}
 
 Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} APIs you took and the corresponding environment feedback: {action_history}
 You are now at step {current_step} and your current observation is: {current_observation}.

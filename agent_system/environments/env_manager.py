@@ -397,7 +397,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                         supervisor_last_name=self.supervisors[i]['last_name'],
                         supervisor_email=self.supervisors[i]['email'],
                         supervisor_phone_number=self.supervisors[i]['phone_number'],
-                        observation=text_obs[i],
+                        task_description=self.tasks[i],
                     )
                 postprocess_text_obs.append(obs)
         else:
@@ -418,7 +418,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                         supervisor_last_name=self.supervisors[i]['last_name'],
                         supervisor_email=self.supervisors[i]['email'],
                         supervisor_phone_number=self.supervisors[i]['phone_number'],
-                        observation=text_obs[i],
+                        task_description=self.tasks[i],
                         step_count=len(self.buffers[i]),
                         history_length=valid_history_length,
                         action_history=action_history.strip(),
@@ -608,8 +608,8 @@ if __name__ == "__main__":
         from agent_system.environments.env_package.appworld import appworld_projection
         from agent_system.environments.env_package.appworld import build_appworld_envs
         import time
-        env_num = 8
-        group_n = 8
+        env_num = 2
+        group_n = 5
         time1 = time.time()
         envs = build_appworld_envs(dataset_name='test_normal', max_interactions=50, seed=1, env_num=env_num, group_n=group_n)
         # val_envs = build_alfworld_envs(alf_config_path, 1000, 4)
