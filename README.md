@@ -19,6 +19,10 @@
 
   `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`, ensuring consistent evaluation or policy training. This is especially useful for algorithms like GRPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
 
+- Multi-modal Agent Support
+
+  Beyond text-based agents, `verl-agent` also supports training vision-language agents. This enables multi-modal reasoning in environments where both visual perception and language understanding are required.
+
 ## Installation
 ### 1. Create and Set Up a Conda Environment
 ```bash
