@@ -385,7 +385,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         return next_observations, rewards, dones, infos
     
 
-    def build_text_obs(self, text_obs: List[str], init: bool = False, history_length: int = 5) -> List[str]:
+    def build_text_obs(self, text_obs: List[str], init: bool = False, history_length: int = 20) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
@@ -411,7 +411,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                     step_number = start_index + j + 1
                     action = record["action"]
                     feedback = record["text_obs"]
-                    action_history += f"[Code {step_number}: '{action}', Feedback {step_number}: '{feedback}']"
+                    action_history += f"\n[\nCode {step_number}: '{action}'\nFeedback {step_number}: '{feedback}'\n]"
 
                 obs = APPWORLD_TEMPLATE.format(
                         supervisor_first_name=self.supervisors[i]['first_name'],

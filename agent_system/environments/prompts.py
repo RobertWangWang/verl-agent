@@ -303,8 +303,8 @@ Marked the active task complete.
 
 1. The email addresses, access tokens and variables (e.g. spotify_password) in the example above were only for demonstration. Obtain the correct information by calling relevant APIs yourself.
 2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
-3. You can use the variables from the previous code blocks in the subsequent code blocks.
-4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
+3. Code execution behaves like in a Jupyter Notebook (.ipynb) — it maintains a persistent execution context, so any variables, imports, or functions defined in previous steps will still be available in the current step.
+4. You should not generate the entire solution in one go. You should write small chunks of code and only one chunk of code in every step, using the result of each previously executed code block to inform your next move. Make sure everything is working correctly before making any irreversible change.
 5. The provided Python environment has access to its standard library. But modules and functions that have a risk of affecting the underlying OS, file system or process are disabled. You will get an error if do call them.
 6. Any reference to a file system in the task instructions means the file system *app*, operable via given APIs, and not the actual file system the code is running on. So do not write code making calls to os-level modules and functions.
 7. To interact with apps, only use the provided APIs, and not the corresponding Python packages. E.g., do NOT use `spotipy` for Spotify. Remember, the environment only has the standard library.
@@ -317,9 +317,8 @@ Marked the active task complete.
 14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
 15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
 16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
-17. You must make all decisions completely autonomously and not ask for any clarifications or confirmations from me or anyone else.
 
-Using these APIs, now generate code to solve the actual task:
+Using these APIs, now begin writing code cells step-by-step — just like working in a Jupyter Notebook — to solve the task:
 
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
@@ -452,8 +451,8 @@ Marked the active task complete.
 
 1. The email addresses, access tokens and variables (e.g. spotify_password) in the example above were only for demonstration. Obtain the correct information by calling relevant APIs yourself.
 2. Only generate valid code blocks, i.e., do not put them in ```...``` or add any extra formatting. Any thoughts should be put as code comments.
-3. You can use the variables from the previous code blocks in the subsequent code blocks.
-4. Write small chunks of code and only one chunk of code in every step. Make sure everything is working correctly before making any irreversible change.
+3. Code execution behaves like in a Jupyter Notebook (.ipynb) — it maintains a persistent execution context, so any variables, imports, or functions defined in previous steps will still be available in the current step.
+4. You should not generate the entire solution in one go. You should write small chunks of code and only one chunk of code in every step, using the result of each previously executed code block to inform your next move. Make sure everything is working correctly before making any irreversible change.
 5. The provided Python environment has access to its standard library. But modules and functions that have a risk of affecting the underlying OS, file system or process are disabled. You will get an error if do call them.
 6. Any reference to a file system in the task instructions means the file system *app*, operable via given APIs, and not the actual file system the code is running on. So do not write code making calls to os-level modules and functions.
 7. To interact with apps, only use the provided APIs, and not the corresponding Python packages. E.g., do NOT use `spotipy` for Spotify. Remember, the environment only has the standard library.
@@ -466,17 +465,16 @@ Marked the active task complete.
 14. Once you have completed the task, call `apis.supervisor.complete_task()`. If the task asks for some information, return it as the answer argument, i.e. call `apis.supervisor.complete_task(answer=<answer>)`. For tasks that do not require an answer, just skip the answer argument or pass it as None.
 15. The answers, when given, should be just entity or number, not full sentences, e.g., `answer=10` for "How many songs are in the Spotify queue?". When an answer is a number, it should be in numbers, not in words, e.g., "10" and not "ten".
 16. You can also pass `status="fail"` in the complete_task API if you are sure you cannot solve it and want to exit.
-17. You must make all decisions completely autonomously and not ask for any clarifications or confirmations from me or anyone else.
 
-Using these APIs, now generate code to solve the actual task:
+Using these APIs, now begin writing code cells step-by-step — just like working in a Jupyter Notebook — to solve the task:
 
 My name is: {supervisor_first_name} {supervisor_last_name}. My personal email is {supervisor_email} and phone number is {supervisor_phone_number}.
 
 Your task is: {task_description}
 
-Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} APIs you took and the corresponding environment feedback: {action_history}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} codes you generated and the corresponding environment feedback: {action_history}
 
 You are now at step {current_step}, and it's your turn to generate code for this step.
-You should first reason step-by-step about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
+You should first reason step-by-step about the last {history_length} histories, and think about which APIs to call, what arguments to use, and how to build your code block to complete the task. This reasoning process MUST be enclosed within <think> </think> tags. 
 Once you've finished your reasoning, you present the solution code body within <code> </code> tags.
 """
