@@ -22,7 +22,7 @@ def worker_func(remote, id, max_interactions):
         cmd, data = remote.recv()
         if cmd == 'reset':
             if env is not None:
-                del env 
+                env.close()
 
             task_id = data
             current_step_count = 0

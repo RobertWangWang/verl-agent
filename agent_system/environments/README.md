@@ -52,7 +52,7 @@ Install APPWorld package in `verl-agent` (some warnings may be raised, you can i
 ```bash
 cd repo_root/
 cd ./agent_system/environments/env_package/appworld/appworld
-pip install .
+pip install -e .
 python -m appworld.cli install
 appworld download data
 
@@ -74,6 +74,6 @@ conda create -n appworld python=3.12 -y
 conda activate appworld
 
 cd ./agent_system/environments/env_package/appworld/appworld
-pip install .
+pip install -e .
 python -m appworld.cli install
 ```

@@ -47,6 +47,10 @@ bash examples/grpo_trainer/run_numberline.sh
 
 ### Appworld
 ```bash
+bash examples/gigpo_trainer/run_appworld.sh
+``` 
+
+```bash
 bash examples/grpo_trainer/run_appworld.sh
 ``` 
 
