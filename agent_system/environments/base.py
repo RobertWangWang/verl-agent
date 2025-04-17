@@ -37,10 +37,10 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
-          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
+          - 'anchor' (None or Any): Anchor observation without any histories or additional info. (for GiGPO only).
         """
         obs, infos = self.envs.reset()
-        return {'text': None, 'image': obs, 'raw': None}, infos
+        return {'text': None, 'image': obs, 'anchor': None}, infos
     
     def step(self, text_actions: List[str]):
         """
@@ -53,7 +53,7 @@ class EnvironmentManagerBase:
         - next_observations (Dict):
           - 'text' (None or List[str]): The textual observation.
           - 'image' (np.ndarray or torch.Tensor): The image observation as either a NumPy array or a PyTorch tensor.
-          - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
+          - 'anchor' (None or Any): Anchor observation without any histories or additional info. (for GiGPO only).
         - rewards (np.ndarry or torch.Tensor): The rewards returned by the environment.
         - dones (np.ndarray or torch.Tensor): Done flags indicating which environments have completed.
         - infos (List[Dict]): Additional environment information.
@@ -67,7 +67,7 @@ class EnvironmentManagerBase:
         next_observations = {
             'text': None, # TODO: Implement this if needed
             'image': next_obs,
-            'raw': None # For GiGPO only. raw observation without any histories, hint, etc. Implement this if needed
+            'anchor': None # For GiGPO only. anchor observation without any histories, hint, etc. Implement this if needed
         }
         # add action_valid to infos
         for i, info in enumerate(infos):

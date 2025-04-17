@@ -1,7 +1,7 @@
-# Environments
+## Environment Setup
 
-## ALFWorld
-Install with pip (python3.10+):
+### 1. ALFWorld
+Install with pip:
 ```bash
 pip3 install gymnasium==0.29.1
 pip3 install stable-baselines3==2.6.0
@@ -31,14 +31,14 @@ Play an Embodied-World (THOR) game:
 alfworld-play-thor
 ```
 
-## Sokoban
+### 2. Sokoban
 ```bash
 pip install matplotlib
 pip install gym==0.26.2
 pip install gym_sokoban==0.0.6
 ```
 
-## Gym Cards
+### 3. Gym Cards
 
 ```bash
 cd repo_root/
@@ -47,7 +47,7 @@ pip3 install gymnasium==0.29.1
 pip3 install stable-baselines3==2.6.0
 ```
 
-## APPWorld
+### 4. APPWorld (Experimental)
 Install APPWorld package in `verl-agent` (some warnings may be raised, you can ignore them)
 ```bash
 cd repo_root/

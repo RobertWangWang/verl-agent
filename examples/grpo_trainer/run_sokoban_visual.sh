@@ -6,14 +6,14 @@ export CUDA_VISIBLE_DEVICES=0,1
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
     --train_data_size 64 \
-    --val_data_size 64
+    --val_data_size 128
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/visual/train.parquet \
     data.val_files=$HOME/data/verl-agent/visual/test.parquet \
     data.train_batch_size=16 \
-    data.val_batch_size=64 \
+    data.val_batch_size=128 \
     data.max_prompt_length=2048 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
@@ -38,7 +38,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.2 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -46,13 +46,13 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
     env.env_name=Sokoban \
-    env.max_steps=20 \
+    env.max_steps=15 \
     env.rollout.n=5 \
     env.sokoban.mode='rgb_array' \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban_6x6_20step_visual' \
-    trainer.experiment_name='qwen_2_5_vl_3b_grpo_n5' \
+    trainer.project_name='verl_sokoban' \
+    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_grpo_n5' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \

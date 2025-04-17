@@ -41,7 +41,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.extract_task(text_obs)
 
         full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
-        return {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}, infos
+        return {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}, infos
     
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
@@ -56,7 +56,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
-        next_observations = {'text': full_text_obs, 'image': image_obs, 'raw': text_obs}
+        next_observations = {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 
@@ -182,14 +182,14 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
             observations = {
                 'text': self.build_text_obs(infos, init=True), 
                 'image': obs,   
-                'raw': obs
+                'anchor': obs
             }
         else:
             self.pre_text_obs = obs
             observations = {
                 'text': self.build_text_obs(infos, obs, init=True),
                 'image': None,
-                'raw': obs
+                'anchor': obs
             }
         # initialize the history buffer
         if self.buffers is not None:
@@ -212,7 +212,7 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
             next_observations = {
                 'text': self.build_text_obs(infos),  
                 'image': next_obs,
-                'raw': next_obs 
+                'anchor': next_obs 
             }
         else:
             self.save_to_history_buffer(self.pre_text_obs, actions)
@@ -220,7 +220,7 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
             next_observations = {
                 'text': self.build_text_obs(infos, next_obs),  
                 'image': None, 
-                'raw': next_obs 
+                'anchor': next_obs 
             }
 
         rewards = to_numpy(rewards)
@@ -307,7 +307,7 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
     def reset(self) -> Dict[str, Any]:
         obs, infos = self.envs.reset()
         # infos = [None] * self.envs.num_envs
-        observations = {'text': self.build_text_obs(infos), 'image': obs, 'raw': obs.copy()}
+        observations = {'text': self.build_text_obs(infos), 'image': obs, 'anchor': obs.copy()}
         
         return observations, infos
 
@@ -316,7 +316,7 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         
         # add text observation to next_observations
         next_observations['text'] = self.build_text_obs(infos)
-        next_observations['raw'] = next_observations['image'].copy()
+        next_observations['anchor'] = next_observations['image'].copy()
 
         return next_observations, rewards, dones, infos
     
@@ -363,7 +363,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         self.tasks = text_obs.copy()
 
         full_text_obs = self.build_text_obs(text_obs, init=True)
-        return {'text': full_text_obs, 'image': None, 'raw': text_obs}, infos
+        return {'text': full_text_obs, 'image': None, 'anchor': text_obs}, infos
     
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions)
@@ -378,7 +378,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
 
-        next_observations = {'text': full_text_obs, 'image': None, 'raw': text_obs}
+        next_observations = {'text': full_text_obs, 'image': None, 'anchor': text_obs}
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
 

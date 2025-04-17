@@ -38,7 +38,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.2 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -47,7 +47,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.use_kl_in_reward=False \
     env.env_name=gym_cards/NumberLine-v0 \
     env.max_steps=10 \
-    env.rollout.n=-1 \
+    env.rollout.n=5 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_numberLine' \

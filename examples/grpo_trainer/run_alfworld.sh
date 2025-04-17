@@ -37,7 +37,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.2 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=32 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \

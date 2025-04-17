@@ -3,14 +3,19 @@ ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
+python3 -m examples.data_preprocess.prepare \
+    --mode 'text' \
+    --train_data_size 64 \
+    --val_data_size 128
+
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
+    algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
     data.val_files=$HOME/data/verl-agent/text/test.parquet \
-    data.train_batch_size=2 \
-    data.val_batch_size=16 \
+    data.train_batch_size=16 \
+    data.val_batch_size=128 \
     data.max_prompt_length=2048 \
-    data.max_response_length=2048 \
+    data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
@@ -32,23 +37,24 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
+    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=32 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
-    algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=Sokoban \
-    env.max_steps=50 \
-    env.rollout.n=8 \
+    env.max_steps=15 \
+    env.rollout.n=5 \
+    env.sokoban.dim_room="[6,6]" \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_debug' \
-    trainer.experiment_name='qwen_2_5_1_5b_gigpo_debug' \
+    trainer.project_name='verl_sokoban' \
+    trainer.experiment_name='6x6_text_qwen_2_5_1_5b_grpo_n5' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=10 \
     trainer.total_epochs=200 \
-    trainer.val_before_train=False $@
+    trainer.val_before_train=True $@

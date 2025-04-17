@@ -248,7 +248,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_a
             token_level_rewards=data.batch['token_level_rewards'], # for episode group reward computing
             step_rewards=data.batch['step_rewards'], # for step group reward computing
             eos_mask=data.batch['response_mask'],
-            raw_obs=data.non_tensor_batch['raw_obs'],
+            anchor_obs=data.non_tensor_batch['anchor_obs'],
             index=data.non_tensor_batch['uid'],
             step_advantage_w=step_advantage_w,
             )

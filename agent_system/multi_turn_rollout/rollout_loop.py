@@ -41,7 +41,7 @@ class TrajectoryCollector:
             item (int): Sample index in the batch
             config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
-            obs (Dict): Environment observation, may contain 'text', 'image', 'raw' keys
+            obs (Dict): Environment observation, may contain 'text', 'image', 'anchor' keys
         
         Returns:
             dict: Contains processed input data such as input_ids, attention_mask, etc.
@@ -53,13 +53,13 @@ class TrajectoryCollector:
         # Get observation components
         obs_texts = obs.get('text', None)
         obs_images = obs.get('image', None)
-        obs_raws = obs.get('raw', None)
+        obs_anchors = obs.get('anchor', None)
         obs_text = obs_texts[item] if obs_texts is not None else None
         obs_image = obs_images[item] if obs_images is not None else None
-        obs_raw = obs_raws[item] if obs_raws is not None else None
+        obs_anchor = obs_anchors[item] if obs_anchors is not None else None
         is_multi_modal = obs_image is not None
 
-        _obs_raw = torch_to_numpy(obs_raw, is_object=True) if isinstance(obs_raw, torch.Tensor) else obs_raw
+        _obs_anchor = torch_to_numpy(obs_anchor, is_object=True) if isinstance(obs_anchor, torch.Tensor) else obs_anchor
 
         # Build chat structure
         obs_content = raw_prompt[0]['content']
@@ -136,7 +136,7 @@ class TrajectoryCollector:
             'attention_mask': attention_mask[0],
             'position_ids': position_ids[0],
             'raw_prompt_ids': self.tokenizer.encode(raw_prompt, add_special_tokens=False),
-            'raw_obs': _obs_raw,
+            'anchor_obs': _obs_anchor,
             'index': item,
             'data_source': data_source
         })
@@ -161,7 +161,7 @@ class TrajectoryCollector:
             obs (Dict): Environment observation dictionary
                 - 'text' (None or List[str]): Text observation data
                 - 'image' (np.ndarray or torch.Tensor): Image observation data
-                - 'raw' (None or Any): Raw observation without any histories or additional info. (for GiGPO only).
+                - 'anchor' (None or Any): Anchor observation without any histories or additional info. (for GiGPO only).
         
         Returns:
             DataProto: Contains processed batch data with preserved metadata

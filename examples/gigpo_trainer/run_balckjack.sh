@@ -12,7 +12,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/verl-agent/visual/train.parquet \
     data.val_files=$HOME/data/verl-agent/visual/test.parquet \
-    data.train_batch_size=16 \
+    data.train_batch_size=32 \
     data.val_batch_size=256 \
     data.max_prompt_length=1024 \
     data.max_response_length=1024 \
@@ -38,7 +38,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
     actor_rollout_ref.rollout.free_cache_engine=False \
-    actor_rollout_ref.rollout.val_kwargs.temperature=0.2 \
+    actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
@@ -49,11 +49,11 @@ python3 -m verl.trainer.main_ppo \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=gym_cards/Blackjack-v0 \
     env.max_steps=10 \
-    env.rollout.n=16 \
+    env.rollout.n=8 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_blackjack' \
-    trainer.experiment_name='qwen_2_5_vl_3b_gigpo_n16_w1_gamma0_95' \
+    trainer.experiment_name='qwen_2_5_vl_3b_gigpo_n8_w1_gamma0_95' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
