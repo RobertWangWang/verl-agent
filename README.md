@@ -1,6 +1,6 @@
 <h1 style="text-align: center;">verl-agent</h1>
 
-`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **LLM agents** via reinforcement learning. `verl-agent` offers integration between large language models (LLMs) and interactive environments, enabling the development of reasoning agents in both visual and language-based tasks.
+`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents** via reinforcement learning. `verl-agent` offers integration between LLM agents and interactive environments, enabling the development of reasoning agents in both visual and language-based tasks.
 
 ## Key Features
 - Multi-Turn Agent-Environment Interaction
