@@ -53,7 +53,6 @@ class EZPointEnv(gym.Env):
         self.set_action_space()
         self.canvas_width, self.canvas_height = 300, 300
         self.observation_space = spaces.Box(low=0, high=255, shape=(300, 300, 3), dtype=np.uint8)
-        self.reset()
 
     def set_action_space(self):
         numbers = NUMBER_ACTIONS_TEN
@@ -66,6 +65,7 @@ class EZPointEnv(gym.Env):
         options: Optional[dict] = None,
     ):
         super().reset(seed=seed)
+        random.seed(seed)
         self.cards_num, self.cards = self._generate_cards()
         self.card_imgs = []
         self.card_width = int(self.canvas_width / len(self.cards) * 0.9)  # Adjust as needed
@@ -79,6 +79,8 @@ class EZPointEnv(gym.Env):
         return self._get_observation(), info
 
     def step(self, action):
+        if action==-1:
+            return self._get_observation(), 0.0, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
         terminated, reward, info = False, 0, {}
         chosen_action = self.allowed_numbers[action] if action < len(self.allowed_numbers) else OPERATOR_ACTIONS[action - len(self.allowed_numbers)]
 

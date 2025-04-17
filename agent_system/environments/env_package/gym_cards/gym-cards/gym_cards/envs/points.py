@@ -99,6 +99,7 @@ class Point24Env(gym.Env):
         options: Optional[dict] = None,
     ):
         super().reset(seed=seed)
+        random.seed(seed)
         self.cards_num, self.cards = self._generate_cards()
         self.card_imgs = []
         self.card_width = int(self.canvas_width / len(self.cards) * 0.9)  # Adjust as needed
@@ -112,6 +113,8 @@ class Point24Env(gym.Env):
         return self._get_observation(), info
 
     def step(self, action):
+        if action==-1:
+            return self._get_observation(), 0.0, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
         terminated, reward, info = False, 0, {}
         chosen_action = self.allowed_numbers[action] if action < len(self.allowed_numbers) else OPERATOR_ACTIONS[action - len(self.allowed_numbers)]
 

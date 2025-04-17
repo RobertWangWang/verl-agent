@@ -108,14 +108,14 @@ def episode_group_reward(token_level_rewards: torch.Tensor,
     return scores
 
 
-def build_step_group(raw_obs: np.array, index: np.array):
+def build_step_group(anchor_obs: np.array, index: np.array):
     """
     Group observations by index and then cluster identical observations within each index group.
     Assigns a unique step_group_uid (UUID) to each cluster.
     
     Parameters:
     -----------
-    raw_obs : np.array
+    anchor_obs : np.array
         Array of observation strings
     index : np.array
         Array of corresponding indices for each observation
@@ -123,10 +123,10 @@ def build_step_group(raw_obs: np.array, index: np.array):
     Returns:
     --------
     np.array
-        Array of step_group_uid values corresponding to the original raw_obs array
+        Array of step_group_uid values corresponding to the original anchor_obs array
     """
     # Initialize the result array with placeholder values
-    step_group_uids = np.empty(len(raw_obs), dtype=object)
+    step_group_uids = np.empty(len(anchor_obs), dtype=object)
     
     # Get unique indices
     unique_indices = np.unique(index)
@@ -137,7 +137,7 @@ def build_step_group(raw_obs: np.array, index: np.array):
     for idx in unique_indices:
         # Get all observations for this index using np.where
         indices = np.where(index == idx)[0]
-        obs_group = raw_obs[indices]
+        obs_group = anchor_obs[indices]
         
         # Create clusters for identical observations
         clusters = defaultdict(list)
@@ -215,7 +215,7 @@ def step_group_reward(step_rewards: torch.Tensor,
 def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    step_rewards: torch.Tensor,
                                    eos_mask: torch.Tensor,
-                                   raw_obs: np.array,
+                                   anchor_obs: np.array,
                                    index: np.array,
                                    epsilon: float = 1e-6,
                                    step_advantage_w: float = 0.8,
@@ -225,7 +225,7 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
     episode_advantages = episode_group_reward(token_level_rewards, eos_mask, index, epsilon)
 
     # Compute step_group_uids
-    step_group_uids = build_step_group(raw_obs, index)
+    step_group_uids = build_step_group(anchor_obs, index)
 
     # Compute step_group_reward
     step_advantages = step_group_reward(step_rewards, eos_mask, step_group_uids, epsilon)

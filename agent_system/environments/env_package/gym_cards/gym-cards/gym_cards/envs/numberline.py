@@ -59,6 +59,8 @@ Special Notes:
         self.steps_made = 0
 
     def step(self, action):
+        if action==-1:
+            return self._get_observation(), 0.0, False, False, {"Target": self.goal_position, "Current": self.position}
         self.steps_made += 1
         prev_distance = abs(self.position - self.goal_position)
         if action == 0 and self.position > 0:
@@ -92,6 +94,7 @@ Special Notes:
         options: Optional[dict] = None,
     ):
         super().reset(seed=seed)
+        random.seed(seed)
         # Randomize start and goal
         self.start_position = random.randint(0, self.max_position)
         self.goal_position = random.randint(0, self.max_position)

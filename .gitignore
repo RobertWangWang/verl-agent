@@ -129,3 +129,9 @@ log
 # nohup
 *.out
 outputs
+
+# appworld
+data/
+.tmp
+start_appworld_server.sh
+

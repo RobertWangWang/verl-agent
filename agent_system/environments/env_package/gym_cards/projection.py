@@ -20,7 +20,7 @@ def gym_projection(text_actions: List[str], env_name):
     for string in text_actions:
         if not isinstance(string, str):
             # directly output a random action if the string is not a string
-            output_indices.append(random.randint(0, len(action_list) - 1))
+            output_indices.append(-1)
             valids.append(0)
             continue
         string = string.lower()
@@ -44,6 +44,6 @@ def gym_projection(text_actions: List[str], env_name):
             valids.append(1)
         else:
             # The string contains none or multiple keywords, randomly select an index from action_list
-            output_indices.append(random.randint(0, len(action_list) - 1))
+            output_indices.append(-1)
             valids.append(0)
-    return torch.Tensor([output_indices]).long().reshape(-1, 1), torch.Tensor([valids]).reshape(-1, 1)
+    return output_indices, valids

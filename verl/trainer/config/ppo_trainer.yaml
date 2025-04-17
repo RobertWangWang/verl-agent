@@ -165,14 +165,6 @@ reward_model:
   forward_max_token_len_per_gpu: ${critic.forward_max_token_len_per_gpu}
   reward_manager: episode
 
-env:
-  env_name: gym_cards/Blackjack-v0
-  seed: 0
-  gamma: 0.9
-  max_steps: 32
-  rollout:
-    n: -1 # -1 means disable env grouping.
-
 custom_reward_function:
   path: null
   name: compute_score
@@ -214,3 +206,17 @@ trainer:
   default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
   max_actor_ckpt_to_keep: null
   max_critic_ckpt_to_keep: null
+
+
+env:
+  env_name: alfworld/AlfredTWEnv
+  seed: 0
+  max_steps: 50
+  rollout:
+    n: -1 # the group number of envs (for GRPO and GiGPO). -1 means disable env grouping.
+
+  sokoban:
+    dim_room: [6, 6]
+    num_boxes: 1
+    search_depth: 30
+    mode: tiny_rgb_array
