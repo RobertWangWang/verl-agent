@@ -76,7 +76,7 @@ You should first reason step-by-step about the current situation before deciding
 Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
 """
 
-SOKOBAN_VISUAL_INIT_TEMPLATE = """
+SOKOBAN_VISUAL_TEMPLATE = """
 You are an expert agent operating in the Sokoban environment. Your goal is to push all the boxes onto the target spots. Once all boxes are on the targets, you win!
 
 # Rules
@@ -94,89 +94,144 @@ Your current observation is shown in the image: <image>
 Your admissible actions are ["up", "down", "left", "right"].
 
 Now it's your turn to make a move (choose ONE action only for the current step).
-You should first reason step-by-step about the current situation before deciding on a final action. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
-"""
-
-SOKOBAN_VISUAL_TEMPLATE = """
-You are an expert agent operating in the Sokoban environment. Your goal is to push all the boxes onto the target spots. Once all boxes are on the targets, you win!
-
-# Rules
-You can only push boxes. You can't pull them, so plan ahead to avoid getting stuck.
-You can't walk through or push boxes into walls.
-To avoid traps, do not push boxes into corners or against walls where they can't be moved again.
-
-# Text Symbols
-Walls (`#`), Floor (`_`), Targets (`O`), Boxes (`X`), Player (`P`), Box on Target (`√`), Player on Target (`S`)
-
-# Visual Elements in the Image:
-Character: A small, green alien-like figure with two antennae and black eyes. It represents you.
-Box: A yellow crate marked with an orange "X" across its front. It is the box you need to push.
-Target: A black tile outlined in red, with a small red diamond shape in the center. It marks the destination where a box should be pushed.
-
-# Current Step
-Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} text observaitons and the corresponding actions you took: {action_history}
-You are now at step {current_step} and your current observation is shown in the image: <image>
-Your admissible actions are ["up", "down", "left", "right"].
-
-Now it's your turn to make a move (choose ONE action only for the current step).
-You should first reason step-by-step about the current situation before deciding on a final action. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
+You should first reason step-by-step about the current situation — observe the positions of boxes and targets, plan a path to push a box toward a target, and avoid traps like corners or walls. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
 """
 
 # --------------------- Gym Cards --------------------- #
 GYM_CARDS_NUMBERLINE_TEMPLATE = """
 <image>You are playing a game called number line. You will see a target number and a current number in the image. And your goal is to move the current number closer to the target by choosing either adding or subtracting one to the current number.
 
-Your response should be a valid json file in the following format: \n{\n\"current number\": \"x\", \n\"target number\": \"x\", \n\"thoughts\": \"{first read out the current and target number, then think carefully about which action to choose}\", \n\"action\": \"-\" or \"+\" \n}
+Your response should be a valid json file in the following format: 
+{{
+"current number": "x",
+"target number": "x",
+"thoughts": "first read out the current and target number, then think carefully about which action to choose",
+"action": "-" or "+" 
+}}
 """
 
 GYM_CARDS_BLACKJACK_TEMPLATE = """
 <image>You are an expert blackjack player helping to decide the optimal action based on the current game state displayed in the image. 
 
 From the image, you can see:
-- Dealer: two cards that belong to the dealer (one is visible; the other remains unseen).
-- Player (you): the cards that belong to you.
+- Dealer (top): one face-up card and one face-down card.  
+- Player (bottom): every card in your hand, laid left-to-right (wraps after five).
 
-Your goal is to make the best possible action to maximize your chances of beating the dealer without exceeding 21.
-Your admissible actions are ["hit", "stand"], where "hit" means taking another card and "stand" means keeping your current hand.
+Game Rules:
+- Your goal is to get as close to 21 as possible without going over.
+- Number cards (2–10) = their value. Face cards (J, Q, K) = 10. Aces (\"A\") = 1 or 11 (an ace is always counted as 11 (usable) unless it causes a bust).
+- After you choose "stand", the dealer reveals the hidden card and draws until the hand total is 17 or higher.
+- If a hand exceeds 21, it busts and loses immediately.
+- A natural blackjack (Ace+10) can get an extra reward.
+- The deck is infinite (with replacement).
+
+Admissible Actions:
+- "hit": take another card.
+- "stand": stop and let the dealer play.
 
 Your response should be a valid json file in the following format:
 {{
-"thoughts": "Analyze the image to identify your cards and the dealer's visible card. Then, reason step-by-step based on standard blackjack strategy and the current game state to decide the best action.",
+"thoughts": "Analyze the image to identify your cards and the dealer's visible card. Then, reason step-by-step based on optimal blackjack strategy under the above rules.",
 "action": "an admissible action"
-}},
+}}
 """
 
 GYM_CARDS_EZPOINTS_TEMPLATE = """
-<image>You are an expert card game player helping to build a math formula that evaluates to 12 using onlt **two** playing cards. You can choose characters from ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '+', '*', '=']. Your goal is to extend the current (incomplete) formula, one character at a time, so that when completed, it evaluates to 12. You are shown an image containing two playing cards. Each card represents a number: 1. Number cards (2–10) equal their face value. 2. Face cards ('J', 'Q', and 'K') are all treated as '10'. 
+<image>You are an expert card game player helping to build a math formula that evaluates to **12**, using only the two numbers shown on the playing cards in the image. You may choose from the following actions: one of the two available card numbers, the operators '+' or '*', or the equals sign '='. You must build the formula step by step, adding only one character at a time to the end of the current formula.
 
-Important Rules: 
-1. You can only use the two numbers shown on the cards (no other numbers). 
-2. Each number can only be used **once** in the formula. 
-3. You must build the formula step by step, by adding ONE character (number or operator) at a time to the end of the current formula. 
-4. The appended character MUST ensure that the formula remains both mathematically valid and syntactically correct.
+Card Rules:
+1. The image shows exactly two playing cards.
+2. Each card represents one number:
+   - Number cards (2–10) equal their face value.
+   - Face cards ('J', 'Q', 'K') are treated as the number 10.
+   - Ace ('A') is treated as 1.
+3. You can only use these two card numbers — no other numbers are allowed.
+4. Each number can be used only once in the formula.
 
-The current formula is {text_formula}. Now it's your turn to add a number or operator to the end of the formula.
+Formula Rules:
+1. At each step, you append only one character: a number (from the two card values), an operator ('+' or '*'), or '='.
+2. Once you add '=', the formula is evaluated and the game ends.
 
-Your response MUST be a valid json file in the following format: 
+Rewards:
++10: if the formula evaluates exactly to 12.
+0: otherwise (e.g., using a number not shown on the cards, reusing a number, incorrect syntax, not evaluating to 12).
+
+----
+Here are three examples.
+
+Example 1:
+The current formula is: '2'
+Two card numbers are: '6' and '2'
+Since '2*6=12', the correct action is: '*'
+
+Example 2:
+The current formula is: '10+2'
+Two card numbers are: '10' and '2'
+Since '10+2=12', the correct action is: '='
+
+Example 3:
+The current formula is: ''
+Two card numbers are: '3' and '4'
+Since '3*4=12', the correct action is: '3'
+----
+
+Now, you are given two card numbers as shown in the image, and the current formula is: '{text_formula}'
+It's your turn to append the next character.
+
+Your response MUST be a valid JSON object in the following format:
 {{
-"thoughts": "You should first describle the two numbers shown in the image and the current formula. Then step-by-step thinking which character (number or operator) should be added next based on the current formula and remaining numbers.",
-"action": "next character (number or operator) to append"
+  "thoughts": "Start by identifying the two card numbers shown in the image. Then review the current formula. Based on the remaining available characters and the goal of reaching 12, reason step-by-step to choose the next valid character to add.",
+  "action": "next character (number, '+', '*', or '=') to append"
 }}
 """
 
 GYM_CARDS_POINTS24_TEMPLATE = """
-<image>You are an expert 24 points card game player. You are observing thee four cards in the image. You can choose between ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '+', '-', '*', '/', '(', ')', '=']. The number or operator you choose will be appended to the current formula. Note that 'J', 'Q', and 'K' count as '10'. Your goal is to output a formula that evaluates to 24, and each number can only be used once. 
+<image>You are an expert at solving the classic "24 Game", where you build an formula that evaluates exactly to **24**, using only the four numbers shown on the playing cards in the image. You may choose from the following actions: one of the four available card numbers, the operators ('+', '-', '*', '/'), the parentheses '(', ')', and the equals sign '='.
 
-The current formula is {text_formula}. Now it's your turn to add a number or operator to the end of the formula.
+Card Rules:
+1. The image shows exactly four playing cards.
+2. Each card represents one number:
+   - Number cards (2–10) equal their face value.
+   - Face cards ('J', 'Q', 'K') are treated as 10.
+   - Ace ('A') is treated as 1.
+3. You can only use these four card numbers — no other numbers are allowed.
+4. Each card can be used only once in the formula.
 
-Your response should be a valid json file in the following format: 
+Formula Rules:
+1. At each step, you append only one character: a number (from the four card values), an operator ('+', '-', '*', '/'), a parenthes ('(', ')'), or '='.
+2. Once you add '=', the formula is evaluated and the game ends.
+
+Rewards:
++10: if the final formula is valid and equals 24, and all four card numbers are used.
+0: otherwise (e.g., using a number not shown on the cards, reusing a number, incorrect syntax, not evaluating to 24).
+
+----
+Here are three examples.
+
+Example 1:
+The current formula is: '8*'  
+Card numbers: '8', '3', '2', '1'  
+Since '8*3*(2-1)=24', the correct action is: '3'
+
+Example 2:
+The current formula is: '(10+2)*(4-2)'
+Card numbers are: '4', '10', '2', '2'
+Since '(10+2)*(4-2)=24', the correct action is: '='
+
+Example 3:
+The current formula is: ''
+Card numbers are: '6', '8', '1', '1'
+Since '6*8/(1+1)=24', the correct action is: '6'
+----
+
+Now, you are given four card numbers as shown in the image, and the current formula is: '{text_formula}'
+It's your turn to append the next character.
+
+Your response MUST be a valid JSON object in the following format:
 {{
-"cards": [x, y, z, w], 
-"current formula": ,
-"thoughts": First check whether the current formula equals 24. If the current formula equals 24, output '='. Otherwise consider which number or operator should be appended to the current formula to make it equal 24. 
-"action": "number" or "operator" 
+  "thoughts": "Start by identifying the four card numbers shown in the image. Then analyze the current formula. Determine what characters (card numbers, operators, or parentheses) are still available. Reason step-by-step how to build a valid formula that equals 24 and figure out the next character to append.",
+  "action": "next character (number, '+', '-', '*', '/', '(', ')', or '=') to append"
 }}
 """
 

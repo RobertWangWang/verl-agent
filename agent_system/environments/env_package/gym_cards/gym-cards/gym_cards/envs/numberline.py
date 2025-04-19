@@ -60,7 +60,7 @@ Special Notes:
 
     def step(self, action):
         if action==-1:
-            return self._get_observation(), 0.0, False, False, {"Target": self.goal_position, "Current": self.position}
+            return self._get_observation(), 0.0, False, False, {"Target": self.goal_position, "Current": self.position, "won": False}
         self.steps_made += 1
         prev_distance = abs(self.position - self.goal_position)
         if action == 0 and self.position > 0:
@@ -78,7 +78,8 @@ Special Notes:
         else:
             reward = 0
 
-        info = {"Target": self.goal_position, "Current": self.position}
+        won = reward > 0
+        info = {"Target": self.goal_position, "Current": self.position, "won": won}
 
         observation = self._get_observation()
         if self.start_position == self.goal_position:
@@ -102,7 +103,7 @@ Special Notes:
             self.goal_position = (self.goal_position + 1) % self.max_position
         self.position = self.start_position
         self.steps_made = 0
-        info = {"Target": self.goal_position, "Current": self.position}
+        info = {"Target": self.goal_position, "Current": self.position, "won": False}
         return self._get_observation(), info
 
     def _get_observation(self):

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import os
 from agent_system.environments.prompts import *
+from collections import defaultdict
 
 def to_numpy(data):
     if isinstance(data, torch.Tensor):
@@ -96,13 +97,33 @@ class EnvironmentManagerBase:
     def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
         """
         Evaluate if the episodes are successful or not. 
-        (Default) implementation is to check if the total rewards are greater than 0.
+        (Default) implementation is to check info['won'] of the last step.
         
         Returns:
         - success (np.ndarray or torch.Tensor): 1 if the episode is successful, 0 otherwise.
         """
-        raise NotImplementedError("success_evaluator should be implemented in the subclass.")
+        total_infos = kwargs['total_infos']
+        total_batch_list = kwargs['total_batch_list']
+        batch_size = len(total_batch_list)
+        
+        success = defaultdict(list)
+        
+        for bs in range(batch_size):
+            self._process_batch(bs, total_batch_list, total_infos, success)
+        
+        assert len(success['main']) == batch_size
+
+        return {key: np.array(value) for key, value in success.items()}
     
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                won_value = float(info['won'])
+                success['main'].append(won_value)
+                return
+            
     def save_image(self, image, step):
         """
         Save an image to a file.

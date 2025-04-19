@@ -8,6 +8,7 @@
   `verl-agent` supports multi-step interactive loops between agents and environments. Agents perceive environmental feedback after each step, forming the basis for reinforcement learning.
 
 - Scalable with Long-Horizon Steps
+
   Prior works like [RAGEN](https://github.com/RAGEN-AI/RAGEN) concatenate all past states and responses, causing the input/output length to grow with each step.
   We implement a step-wise independent interaction paradigm that aligns with standard RL pipelines. Each step is processed individually, without concatenating the entire interaction history into a single input. This makes `verl-agent` highly scalable for long-horizon tasks.
   
@@ -19,7 +20,7 @@
 
   `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`, ensuring consistent evaluation or policy training. This is especially useful for algorithms like GRPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
 
-- Multi-modal Agent Support
+- Multi-Modal Agent Support
 
   Beyond text-based agents, `verl-agent` also supports training vision-language agents. This enables multi-modal reasoning in environments where both visual perception and language understanding are required.
 

@@ -1,11 +1,12 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=2,3
+export CUDA_VISIBLE_DEVICES=4,5
 
 train_data_size=32
 val_data_size=128
 group_size=8
+
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
@@ -27,7 +28,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
@@ -51,17 +52,16 @@ python3 -m verl.trainer.main_ppo \
     algorithm.use_kl_in_reward=False \
     algorithm.gamma=0.95 \
     algorithm.gigpo.step_advantage_w=1.0 \
-    env.env_name=Sokoban \
+    env.env_name=gym_cards/Blackjack-v0 \
     env.max_steps=15 \
     env.rollout.n=$group_size \
-    env.sokoban.mode='rgb_array' \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban' \
-    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_gigpo_n8_w1_gamma0_95_step15_wo_history' \
+    trainer.project_name='verl_blackjack' \
+    trainer.experiment_name='qwen_2_5_vl_3b_gigpo_n8_w1_gamma0_95' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=100 \
     trainer.test_freq=10 \
     trainer.total_epochs=500 \
     trainer.val_before_train=True $@

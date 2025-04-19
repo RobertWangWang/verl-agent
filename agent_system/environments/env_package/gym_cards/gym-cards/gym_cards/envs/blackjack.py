@@ -34,7 +34,9 @@ def draw_hand_with_info(np_random):
 
 
 def cmp(a, b):
-    return float(a > b) - float(a < b)
+    r = float(a > b) - float(a < b)
+    r = 0 if r < 0 else r
+    return r
 
 
 # 1 = Ace, 2-10 = Number cards, Jack/Queen/King = 10
@@ -198,13 +200,14 @@ class BlackjackEnv(gym.Env):
 
     def step(self, action):
         if action==-1:
-            return self._get_obs(), 0.0, False, False, {"Dealer Card": self.dealer, "Player Card": self.player}
+            return self._get_obs(), 0.0, False, False, {"Dealer Card": self.dealer, "Player Card": self.player, 'won': False}
         assert self.action_space.contains(action)
         if action:  # hit: add a card to players hand and return
             self.player.append(draw_card_with_info(self.np_random))
+            won = False
             if is_bust(self.player):
                 terminated = True
-                reward = -1.0
+                reward = 0.0
             else:
                 terminated = False
                 reward = 0.0
@@ -224,7 +227,9 @@ class BlackjackEnv(gym.Env):
             ):
                 # Natural gives extra points, but doesn't autowin. Legacy implementation
                 reward = 1.5
-        info = {"Dealer Card": self.dealer, "Player Card": self.player}
+            
+            won = reward > 0
+        info = {"Dealer Card": self.dealer, "Player Card": self.player, 'won': won}
 
         return self._get_obs(), reward, terminated, False, info
 
@@ -254,7 +259,7 @@ class BlackjackEnv(gym.Env):
 
         if self.render_mode == "human":
             self.render()
-        info = {"Dealer Card": self.dealer, "Player Card": self.player}
+        info = {"Dealer Card": self.dealer, "Player Card": self.player, 'won': False}
         return self._get_obs(), info
 
     def _get_obs(self):
