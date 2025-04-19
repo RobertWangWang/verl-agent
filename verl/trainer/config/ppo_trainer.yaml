@@ -181,7 +181,6 @@ algorithm:
     horizon: 10000
     target_kl: 0.1
   gigpo:
-    gamma: 0.98
     step_advantage_w: 0.5
 
 trainer:

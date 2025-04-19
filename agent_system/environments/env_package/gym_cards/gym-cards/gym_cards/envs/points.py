@@ -72,7 +72,6 @@ class Point24Env(gym.Env):
 
     Reward:
         - 10 if the formula evaluates to the target_points.
-        - -1 if an invalid action is taken.
         - 0 otherwise
 
     Initialization Options:
@@ -109,29 +108,28 @@ class Point24Env(gym.Env):
             self.card_imgs.append(pil_img)
         self.formula = []
         self.used_cards = []
-        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": False}
         return self._get_observation(), info
 
     def step(self, action):
         if action==-1:
-            return self._get_observation(), 0.0, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+            return self._get_observation(), 0, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": False}
         terminated, reward, info = False, 0, {}
         chosen_action = self.allowed_numbers[action] if action < len(self.allowed_numbers) else OPERATOR_ACTIONS[action - len(self.allowed_numbers)]
 
         ## terminate first if the formula is too long.
         if len(self.formula) > 20:
-            return self._terminate_step(-1, 'time_limit_reached', is_truncated=True)
+            return self._terminate_step(0, 'time_limit_reached', is_truncated=True)
 
         if not self._is_valid_action(chosen_action):
             ## Add a space to the formula, to make sure the formula length increases.
-            self.formula.append(" ")
-            return self._get_observation(), -1, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+            return self._get_observation(), 0, False, False, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": False}
         elif chosen_action in self.allowed_numbers:
             self.used_cards.append(chosen_action)
 
         if chosen_action == '=':
             return self._evaluate_formula()
-        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": False}
         self.formula.append(chosen_action)
 
         return self._get_observation(), reward, terminated, False, info
@@ -165,19 +163,21 @@ class Point24Env(gym.Env):
     def _evaluate_formula(self):
         try:
             formula_str = ''.join(map(str, self.formula))
-            reward = 10 if eval(formula_str) == self.target_points else -1
+            reward = 10 if eval(formula_str) == self.target_points else 0
         except Exception:
             # The formula is invalid
-            reward = -1
+            reward = 0
         finally:
             if len(self.used_cards) != 4:
                 # Not all cards are used.
-                reward = -1
-        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+                reward = 0
+        
+        won = reward > 0
+        info = {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": won}
         return self._get_observation(), reward, True, False, info
 
     def _terminate_step(self, reward, info_key, is_truncated=False):
-        return self._get_observation(), reward, not is_truncated, is_truncated, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula}
+        return self._get_observation(), reward, not is_truncated, is_truncated, {"Cards": self.cards, "Numbers": self.cards_num, "Formula": self.formula, "won": False}
 
     def _get_observation(self):
         # Create a blank white canvas

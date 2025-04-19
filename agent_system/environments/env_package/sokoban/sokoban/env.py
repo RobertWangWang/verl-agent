@@ -92,7 +92,7 @@ class SokobanEnv(BaseDiscreteActionEnv, GymSokobanEnv):
         # assert not self.success()
 
         if action == self.INVALID_ACTION:
-            return self.render(self.mode), 0, False, {"action_is_effective": False, "won": False}
+            return self.render(self.mode), -0.1, False, {"action_is_effective": False, "won": False}
         prev_player_position = self.player_position
         _, reward, done, _ = GymSokobanEnv.step(self, action, observation_mode=self.mode)
         

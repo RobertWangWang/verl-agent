@@ -115,21 +115,6 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(actions)):
             self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
 
-    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        total_infos = kwargs['total_infos']
-        total_batch_list = kwargs['total_batch_list']
-        batch_size = len(total_batch_list)
-        
-        success = defaultdict(list)
-        
-        for bs in range(batch_size):
-            self._process_batch(bs, total_batch_list, total_infos, success)
-        
-        assert len(success['main']) == batch_size
-        
-        # Convert lists to numpy arrays
-        return {key: np.array(value) for key, value in success.items()}
-
     def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
         # Find the last entry with active masks
         for i in reversed(range(len(total_batch_list[batch_idx]))):
@@ -228,14 +213,14 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
 
         return next_observations, rewards, dones, infos
 
-    def build_text_obs(self, infos, text_obs: List[str]=None, init: bool = False, history_length: int = 3) -> List[str]:
+    def build_text_obs(self, infos, text_obs: List[str]=None, init: bool = False, history_length: int = 5) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
         postprocess_text_obs = []
         for i in range(len(infos)):
             if init:
-                obs = SOKOBAN_VISUAL_INIT_TEMPLATE if self.is_multi_modal \
+                obs = SOKOBAN_VISUAL_TEMPLATE if self.is_multi_modal \
                  else SOKOBAN_INIT_TEMPLATE.format(
                     current_observation=text_obs[i],
                 )
@@ -247,15 +232,13 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
                 action_history = ""
                 for j, record in enumerate(recent_history):
                     step_number = start_index + j + 1
-                    action_history += f"[Text Observation {step_number}: \n{record["text_obs"]},\nAction {step_number}: '{record["action"]}']"
+                    if self.is_multi_modal:
+                        action_history += f"\n[Action {step_number}: '{record["action"]}']"
+                    else:
+                        action_history += f"\n[Text Observation {step_number}: \n{record["text_obs"]}\nAction {step_number}: '{record["action"]}']"
 
                 if self.is_multi_modal:
-                    obs = SOKOBAN_VISUAL_TEMPLATE.format(
-                        step_count=len(self.buffers[i]),
-                        history_length=valid_history_length,
-                        action_history=action_history.strip(),
-                        current_step=len(self.buffers[i]) + 1,
-                    )
+                    obs = SOKOBAN_VISUAL_TEMPLATE
                 else:
                     obs = SOKOBAN_TEMPLATE.format(
                         step_count=len(self.buffers[i]),
@@ -271,32 +254,6 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
     def save_to_history_buffer(self, text_obs, actions):
         for i in range(len(actions)):
             self.buffers[i].append({'text_obs': text_obs[i], 'action': self.ACTION_LOOKUP[actions[i]]})
-
-    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        total_infos = kwargs['total_infos']
-        total_batch_list = kwargs['total_batch_list']
-        batch_size = len(total_batch_list)
-        
-        success = defaultdict(list)
-        
-        for bs in range(batch_size):
-            self._process_batch(bs, total_batch_list, total_infos, success)
-        
-        assert len(success['main']) == batch_size
-        
-        # Convert lists to numpy arrays
-        return {key: np.array(value) for key, value in success.items()}
-    
-    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
-        # Find the last entry with active masks
-        for i in reversed(range(len(total_batch_list[batch_idx]))):
-            batch_item = total_batch_list[batch_idx][i]
-            if batch_item['active_masks']:
-                info = total_infos[batch_idx][i]
-                won_value = float(info['won'])
-                success['main'].append(won_value)
-
-                return  # Exit after finding the first active mask
 
 
 # Customizing the your own environment manager: 
@@ -319,11 +276,6 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         next_observations['anchor'] = next_observations['image'].copy()
 
         return next_observations, rewards, dones, infos
-    
-    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        episode_rewards = kwargs['episode_rewards']
-        success = episode_rewards > 0
-        return {'main': success}
 
 
     def build_text_obs(self, infos: Tuple[Dict]=None) -> List[str]:
@@ -333,10 +285,10 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
         postprocess_text_obs = []
         for i in range(len(infos)):
             if 'ezpoints' in self.env_name.lower():
-                text_formula = ''.join(str(element) for element in infos[i]['Formula']) if infos[i] is not None else 'empty'
+                text_formula = ''.join(str(element) for element in infos[i]['Formula']) if infos[i] is not None else ''
                 obs = GYM_CARDS_EZPOINTS_TEMPLATE.format(text_formula=text_formula)
             elif 'points24' in self.env_name.lower():
-                text_formula = ''.join(str(element) for element in infos[i]['Formula']) if infos[i] is not None else 'empty'
+                text_formula = ''.join(str(element) for element in infos[i]['Formula']) if infos[i] is not None else ''
                 obs = GYM_CARDS_POINTS24_TEMPLATE.format(text_formula=text_formula)
             elif 'numberline' in self.env_name.lower():
                 obs = GYM_CARDS_NUMBERLINE_TEMPLATE
@@ -431,32 +383,6 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(actions)):
             self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
 
-    def success_evaluator(self, *args, **kwargs) -> Dict[str, np.ndarray]:
-        total_infos = kwargs['total_infos']
-        total_batch_list = kwargs['total_batch_list']
-        batch_size = len(total_batch_list)
-        
-        success = defaultdict(list)
-        
-        for bs in range(batch_size):
-            self._process_batch(bs, total_batch_list, total_infos, success)
-        
-        assert len(success['main']) == batch_size
-        
-        # Convert lists to numpy arrays
-        return {key: np.array(value) for key, value in success.items()}
-
-    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
-        # Find the last entry with active masks
-        for i in reversed(range(len(total_batch_list[batch_idx]))):
-            batch_item = total_batch_list[batch_idx][i]
-            if batch_item['active_masks']:
-                info = total_infos[batch_idx][i]
-                won_value = float(info['won'])
-                success['main'].append(won_value)
-                
-                return  # Exit after finding the first active mask
-
 
 def make_envs(config):
     """
@@ -520,18 +446,18 @@ def make_envs(config):
 
 
 if __name__ == "__main__":
-    env_name = "appworld"
+    env_name = "gym_cards"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
-        env_num = 8
+        env_num = 2
         group_n = 5
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
-        envs = build_gymcards_envs('gym_cards/Blackjack-v0', 0, env_num, group_n)
-        projection_f = partial(gym_projection, env_name='gym_cards/Blackjack-v0')
-        env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/Blackjack-v0')
+        envs = build_gymcards_envs('gym_cards/EZPoints-v0', 0, env_num, group_n)
+        projection_f = partial(gym_projection, env_name='gym_cards/EZPoints-v0')
+        env_manager = GymCardEnvironmentManager(envs, projection_f, 'gym_cards/EZPoints-v0')
         obs, infos = env_manager.reset()
         for i in range(100):
-            random_actions = [str(np.random.randint(0, 10)) for i in range(len(infos))]
+            random_actions = [f'"action": {np.random.randint(0, 10)}' for i in range(len(infos))]
             obs, rewards, dones, infos = env_manager.step(random_actions)
             env_manager.save_image(obs['image'], i)
         print("completed")
