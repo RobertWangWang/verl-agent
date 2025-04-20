@@ -20,9 +20,14 @@
 
   `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`, ensuring consistent evaluation or policy training. This is especially useful for algorithms like GRPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
 
+- Rich Agent Environment Support
+  
+  `verl-agent` offers a diverse set of interactive environments including embodied AI environments like [ALFWorld](https://github.com/alfworld/alfworld), visual games such as [Sokoban](https://github.com/mpSchrader/gym-sokoban) and [Gym Cards](https://github.com/RL4VLM/RL4VLM/blob/main/gym-cards/README.md), and digital interface control tasks like [WebShop](https://github.com/princeton-nlp/WebShop) and [AppWorld](https://github.com/stonybrooknlp/appworld/) (experimental). 
+
 - Multi-Modal Agent Support
 
   Beyond text-based agents, `verl-agent` also supports training vision-language agents. This enables multi-modal reasoning in environments where both visual perception and language understanding are required.
+
 
 ## Installation
 ### 1. Create and Set Up a Conda Environment
@@ -73,6 +78,15 @@ bash examples/gigpo_trainer/run_numberline.sh
 
 ```bash
 bash examples/grpo_trainer/run_numberline.sh
+```
+
+### WebShop
+```bash
+bash examples/gigpo_trainer/run_webshop.sh
+```
+
+```bash
+bash examples/grpo_trainer/run_webshop.sh
 ```
 
 ### Appworld (Experimental)
