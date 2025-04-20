@@ -131,7 +131,7 @@ log
 outputs
 
 # appworld
-data/
+appworld/*data/
 .tmp
 start_appworld_server.sh
 

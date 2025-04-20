@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch.multiprocessing as mp
+import sys
 
 from appworld import AppWorld, load_task_ids, update_root
 
@@ -93,7 +94,10 @@ class AppWorldEnvs:
         self.workers = []
         self.task_ids = load_task_ids(dataset_name)
 
-        ctx = mp.get_context('fork')
+        if sys.platform.startswith("win"):
+            ctx = mp.get_context('spawn')
+        else:
+            ctx = mp.get_context('fork')
         
         for i in range(self.num_processes):
             parent_remote, child_remote = mp.Pipe()

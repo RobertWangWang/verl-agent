@@ -35,7 +35,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.gamefile = parse_gamefile(infos)
         # initialize the history buffer
         if self.buffers is not None:
-            del self.buffers
+            self.buffers.clear()
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = []
         self.extract_task(text_obs)
@@ -178,7 +178,7 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
             }
         # initialize the history buffer
         if self.buffers is not None:
-            del self.buffers
+            self.buffers.clear()
         self.buffers = [[] for _ in range(len(infos))]
         return observations, infos
 
@@ -233,9 +233,9 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
                 for j, record in enumerate(recent_history):
                     step_number = start_index + j + 1
                     if self.is_multi_modal:
-                        action_history += f"\n[Action {step_number}: '{record["action"]}']"
+                        action_history += f"\n[Action {step_number}: '{record['action']}']"
                     else:
-                        action_history += f"\n[Text Observation {step_number}: \n{record["text_obs"]}\nAction {step_number}: '{record["action"]}']"
+                        action_history += f"\n[Text Observation {step_number}: \n{record['text_obs']}\nAction {step_number}: '{record['action']}']"
 
                 if self.is_multi_modal:
                     obs = SOKOBAN_VISUAL_TEMPLATE
@@ -256,7 +256,6 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
             self.buffers[i].append({'text_obs': text_obs[i], 'action': self.ACTION_LOOKUP[actions[i]]})
 
 
-# Customizing the your own environment manager: 
 class GymCardEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, env_name):
         super().__init__(envs, projection_f, env_name)
@@ -299,6 +298,136 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
             postprocess_text_obs.append(obs)
         return postprocess_text_obs
 
+
+class WebshopEnvironmentManager(EnvironmentManagerBase):
+    def __init__(self, envs, projection_f, env_name):
+        self.buffers = None
+        super().__init__(envs, projection_f, env_name)
+    
+    def reset(self) -> Dict[str, Any]:
+        obs, infos = self.envs.reset()
+        self.tasks = self.extract_task(obs)
+        obs = self.format_obs(obs)
+        # infos = [None] * self.envs.num_envs
+        observations = {'text': self.build_text_obs(obs, infos, init=True), 
+                        'image': None, 
+                        'anchor': obs.copy()
+                        }
+        self.pre_text_obs = obs
+        # initialize the history buffer
+        if self.buffers is not None:
+            self.buffers.clear()
+        self.buffers = [[] for _ in range(len(infos))]
+        return observations, infos
+
+    def step(self, text_actions: List[str]):
+        actions, valids = self.projection_f(text_actions)
+        next_obs, rewards, dones, infos = self.envs.step(actions)
+
+        next_obs = self.format_obs(next_obs)
+
+        self.save_to_history_buffer(self.pre_text_obs, actions)
+        self.pre_text_obs = next_obs
+
+        if to_numpy(dones).any():
+            print("Episode completed")
+        next_observations = {
+            'text': self.build_text_obs(next_obs, infos), # TODO: Implement this if needed
+            'image': None,
+            'anchor': next_obs.copy() # For GiGPO only. anchor observation without any histories, hint, etc. Implement this if needed
+        }
+        # add action_valid to infos
+        for i, info in enumerate(infos):
+            info['is_action_valid'] = to_numpy(valids[i])
+
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+
+        return next_observations, rewards, dones, infos
+
+    def extract_task(self, text_obs: List[str]):
+        tasks = []
+        for obs in text_obs:
+            parts = obs.split(" [SEP] ")
+            assert parts[1]=='Instruction:'
+            tasks.append(parts[2])
+        return tasks
+    
+    def format_obs(self, text_obs):
+        postprocess_text_obs = []
+        for i in range(len(text_obs)):
+            parts = text_obs[i].split(" [SEP] ")
+            # the index of self.tasks[i] in parts
+            try:
+                index = parts.index(self.tasks[i])
+                reformatted_obs = " [SEP] ".join(f"'{p}'" for p in parts[index+1:])
+            except:
+                reformatted_obs = text_obs[i]
+
+            postprocess_text_obs.append(reformatted_obs)
+
+        return postprocess_text_obs
+    
+    def format_avail_actions(self, avail):
+        actions = []
+
+        for key in avail.keys():
+            if key not in ["has_search_bar", "clickables"]:
+                raise ValueError(f"Unknown key in available actions: {key}")
+
+        if avail["has_search_bar"]:
+            actions.append("search[<your query>]")
+
+        for txt in avail["clickables"]:
+            actions.append(f"click[{txt}]")
+
+        return actions
+
+    def save_to_history_buffer(self, text_obs, actions):
+        for i in range(len(actions)):
+            self.buffers[i].append({'text_obs': text_obs[i], 'action': actions[i]})
+            
+    def build_text_obs(self, text_obs: List[str], infos: List[List[str]], init: bool = False, history_length: int = 3) -> List[str]:
+        """
+        This function builds the text observation for the agent.
+        """
+        postprocess_text_obs = []
+        for i in range(len(text_obs)):
+            
+            available_actions = self.format_avail_actions(infos[i]['available_actions'])
+            reformatted_available_actions = "\n ".join(f"'{s}'," for s in available_actions)
+
+            if init:
+                obs = WEBSHOP_INIT_TEMPLATE.format(
+                    task_description=self.tasks[i],
+                    current_observation=text_obs[i],
+                    available_actions=reformatted_available_actions
+                )
+            else:
+                # Get last `history_length` steps
+                recent_history = self.buffers[i][-history_length:]
+                valid_history_length = len(recent_history)
+                start_index = len(self.buffers[i]) - valid_history_length
+                action_history = ""
+                for j, record in enumerate(recent_history):
+                    step_number = start_index + j + 1
+                    action = record["action"]
+                    env_obs = record["text_obs"]
+                    action_history += f"\n[Observation {step_number}: '{env_obs}', Action {step_number}: '{action}']"
+                obs = WEBSHOP_TEMPLATE.format(
+                    task_description=self.tasks[i],
+                    step_count=len(self.buffers[i]),
+                    history_length=valid_history_length,
+                    action_history=action_history.strip(),
+                    current_step=len(self.buffers[i]) + 1,
+                    current_observation=text_obs[i],
+                    available_actions=reformatted_available_actions
+                )
+
+            postprocess_text_obs.append(obs)
+
+        return postprocess_text_obs
+
 class AppWorldEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, env_name):
         self.buffers = None
@@ -310,7 +439,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         self.supervisors = [info['supervisor'] for info in infos]
         # initialize the history buffer
         if self.buffers is not None:
-            del self.buffers
+            self.buffers.clear()
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = text_obs.copy()
 
@@ -431,6 +560,16 @@ def make_envs(config):
         envs = SokobanEnvironmentManager(_envs, projection_f, config.env.env_name)
         val_envs = SokobanEnvironmentManager(_val_envs, projection_f, config.env.env_name)
         return envs, val_envs
+    elif "webshop" in config.env.env_name.lower():
+        from agent_system.environments.env_package.webshop import build_webshop_envs, webshop_projection
+        _envs = build_webshop_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, is_train=True)
+        _val_envs = build_webshop_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False)
+
+        projection_f = partial(webshop_projection)
+        envs = WebshopEnvironmentManager(_envs, projection_f, config.env.env_name)
+        val_envs = WebshopEnvironmentManager(_val_envs, projection_f, config.env.env_name)
+
+        return envs, val_envs
     elif "appworld" in config.env.env_name.lower():
         from agent_system.environments.env_package.appworld import build_appworld_envs, appworld_projection
         _envs = build_appworld_envs(dataset_name='train', seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, start_server_id=0)
@@ -446,7 +585,7 @@ def make_envs(config):
 
 
 if __name__ == "__main__":
-    env_name = "gym_cards"
+    env_name = "webshop"
     if env_name == "gym_cards":
         # Test GymCardEnvironmentManager
         env_num = 2
@@ -527,6 +666,40 @@ if __name__ == "__main__":
                 env_manager.save_image(obs['image'][0], i)
             if np.array(dones).any():
                 print("Episode completed")
+    elif env_name == "webshop":
+        # Test WebshopEnvironmentManager
+        from agent_system.environments.env_package.webshop import webshop_projection
+        from agent_system.environments.env_package.webshop import build_webshop_envs
+        from agent_system.environments.env_package.webshop.webshop.web_agent_site.models import RandomPolicy
+        import time
+        env_num = 2
+        group_n = 5
+        time1 = time.time()
+        envs = build_webshop_envs(seed=1, env_num=env_num, group_n=group_n)
+        # val_envs = build_webshop_envs(1000, 4)
+        env_manager = WebshopEnvironmentManager(envs, webshop_projection, 'webshop')
+        policy = RandomPolicy()
+        time2 = time.time()
+        print(f"env_num: {env_num}, group_n: {group_n}, init time: ", time2 - time1)
+        # val_env_manager = AlfWorldEnvironmentManager(val_envs, alfworld_projection, 'alfworld/AlfredTWEnv')
+        for k in range(10):
+            time1 = time.time()
+            obs, infos = env_manager.reset()
+            for i in range(20):
+                # get random actions from admissible 'valid' commands (not available for AlfredThorEnv)
+                print("step: ", i)
+                random_actions = ['<action>'+policy.forward(None, info['available_actions'])+'</action>' for info in infos]
+                # step
+                obs, rewards, dones, infos = env_manager.step(random_actions)
+                if np.array(dones).any():
+                    print("Episode completed")
+
+                if obs['image'] is not None:
+                    env_manager.save_image(obs['image'], i)
+                # print("obs['image'].shape: ", obs['image'].shape)
+            time2 = time.time()
+            print(f"env_num: {env_num}, group_n: {group_n}, Time elapsed: ", time2 - time1)
+        print("completed")
 
     elif env_name == "appworld":
         # Test AppWorldEnvironmentManager

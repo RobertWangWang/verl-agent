@@ -2,6 +2,7 @@ import torch.multiprocessing as mp
 import gym
 from agent_system.environments.env_package.sokoban.sokoban import SokobanEnv
 import numpy as np
+import sys
 
 def _worker(remote, mode, env_kwargs):
     """
@@ -75,7 +76,10 @@ class SokobanMultiProcessEnv(gym.Env):
         self.parent_remotes = []
         self.workers = []
 
-        ctx = mp.get_context('fork')
+        if sys.platform.startswith("win"):
+            ctx = mp.get_context('spawn')
+        else:
+            ctx = mp.get_context('fork')
 
         for i in range(self.num_processes):
             parent_remote, child_remote = mp.Pipe()
