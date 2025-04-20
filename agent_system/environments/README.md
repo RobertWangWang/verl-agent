@@ -47,7 +47,40 @@ pip3 install gymnasium==0.29.1
 pip3 install stable-baselines3==2.6.0
 ```
 
-### 4. APPWorld (Experimental)
+### 4. WebShop
+WebShop requires Python 3.9, so begin by creating a new `verl-agent-webshop` environment
+```bash
+conda create -n verl-agent-webshop python==3.9 -y
+conda activate verl-agent-webshop
+```
+
+Install WebShop
+```bash
+cd ./agent_system/environments/env_package/webshop/webshop
+./setup.sh -d all
+```
+
+Note: If you encounter issues with gdown, you may need visit `https://drive.google.com/`, get your Google Drive cookie, and paste it into `.cache/gdown/cookies.txt`.
+Or you may need to manually download the files.
+
+
+Verify that WebShop was installed correctly by running:
+```bash
+python run_web_agent_text_env.py
+```
+
+After WebShop is installed, return to the root directory of the repository and install the verl package in `verl-agent`:
+```bash
+cd repo_root/
+pip3 install flash-attn --no-build-isolation
+pip3 install -e .
+pip3 install vllm==0.8.2
+# spacy 3.7.2 requires typer<0.10.0,>=0.3.0, but you have typer 0.15.2 which is incompatible.
+# weasel 0.3.4 requires typer<0.10.0,>=0.3.0, but you have typer 0.15.2 which is incompatible.
+```
+The warnings can be safely ignored.
+
+### 5. APPWorld (Experimental)
 Install APPWorld package in `verl-agent` (some warnings may be raised, you can ignore them)
 ```bash
 cd repo_root/
@@ -77,36 +110,3 @@ cd ./agent_system/environments/env_package/appworld/appworld
 pip install -e .
 python -m appworld.cli install
 ```
-
-### 5. WebShop
-WebShop requires Python 3.9, so begin by creating a new `verl-agent` environment
-```bash
-conda create -n verl-agent python==3.9 -y
-conda activate verl-agent
-```
-
-Install WebShop
-```bash
-cd ./agent_system/environments/env_package/webshop/WebShop
-./setup.sh -d all
-```
-
-Note: If you encounter issues with gdown, you may need visit `https://drive.google.com/`, get your Google Drive cookie, and paste it into `.cache/gdown/cookies.txt`.
-Or you may need to manually download the files.
-
-
-Verify that WebShop was installed correctly by running:
-```bash
-python run_web_agent_text_env.py
-```
-
-After WebShop is installed, return to the root directory of the repository and install the verl package in `verl-agent`:
-```bash
-cd repo_root/
-pip3 install flash-attn --no-build-isolation
-pip3 install -e .
-pip3 install vllm==0.8.2
-# spacy 3.7.2 requires typer<0.10.0,>=0.3.0, but you have typer 0.15.2 which is incompatible.
-# weasel 0.3.4 requires typer<0.10.0,>=0.3.0, but you have typer 0.15.2 which is incompatible.
-```
-The warnings can be safely ignored.

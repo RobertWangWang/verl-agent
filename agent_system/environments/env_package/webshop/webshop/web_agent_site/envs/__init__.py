@@ -1,7 +1,7 @@
 from gym.envs.registration import register
 
-from agent_system.environments.env_package.webshop.webshop.web_agent_site.envs.web_agent_site_env import WebAgentSiteEnv
-from agent_system.environments.env_package.webshop.webshop.web_agent_site.envs.web_agent_text_env import WebAgentTextEnv
+from web_agent_site.envs.web_agent_site_env import WebAgentSiteEnv
+from web_agent_site.envs.web_agent_text_env import WebAgentTextEnv
 
 register(
   id='WebAgentSiteEnv-v0',

@@ -7,7 +7,7 @@ import spacy
 from collections import defaultdict
 from rich import print
 from thefuzz import fuzz
-from agent_system.environments.env_package.webshop.webshop.web_agent_site.engine.normalize import normalize_color
+from web_agent_site.engine.normalize import normalize_color
 
 nlp = spacy.load("en_core_web_sm")
 

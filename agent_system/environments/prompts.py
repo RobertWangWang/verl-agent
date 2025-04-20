@@ -161,19 +161,19 @@ Rewards:
 Here are three examples.
 
 Example 1:
-The current formula is: '2'
-Two card numbers are: '6' and '2'
-Since '2*6=12', the correct action is: '*'
+The current formula is: '3'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '+'
 
 Example 2:
-The current formula is: '10+2'
-Two card numbers are: '10' and '2'
-Since '10+2=12', the correct action is: '='
+The current formula is: '3+9'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '='
 
 Example 3:
 The current formula is: ''
-Two card numbers are: '3' and '4'
-Since '3*4=12', the correct action is: '3'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '3'
 ----
 
 Now, you are given two card numbers as shown in the image, and the current formula is: '{text_formula}'

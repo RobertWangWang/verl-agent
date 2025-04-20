@@ -41,6 +41,10 @@ def _worker(remote, seed, env_kwargs):
                 obs, reward, done, info = env.step(action)
                 info = dict(info or {})  # make a *copy* so we can mutate safely
                 info['available_actions'] = env.get_available_actions()
+                info['won'] = False
+                assert reward <= 1.0, f"Reward {reward} is greater than 1.0"
+                if done and reward == 1.0:
+                    info['won'] = True
                 remote.send((obs, reward, done, info))
 
             elif cmd == 'reset':
@@ -48,6 +52,7 @@ def _worker(remote, seed, env_kwargs):
                 obs, info = env.reset(seed=seed_for_reset)
                 info = dict(info or {})
                 info['available_actions'] = env.get_available_actions()
+                info['won'] = False
                 remote.send((obs, info))
 
             elif cmd == 'render':
@@ -214,34 +219,3 @@ def build_webshop_envs(
         env_kwargs=env_kwargs,
     )
 
-
-if __name__ == '__main__':
-    # Quick smoke test ---------------------------------------------------
-    from agent_system.environments.env_package.webshop.webshop.web_agent_site.models import RandomPolicy
-    env = build_webshop_envs(
-        seed=42,
-        env_num=2,
-        group_n=5,
-        env_kwargs={'observation_mode': 'text', 'num_products': None},
-    )
-    policy = RandomPolicy()
-
-    observations, infos = env.reset()
-    done_flags = [False] * env.num_processes
-
-    while not all(done_flags):
-        actions = []
-        for idx, info in enumerate(infos):
-            if done_flags[idx]:
-                actions.append('noop')
-            else:
-                if info['available_actions']['clickables'] == []:
-                    print("No available actions")
-                actions.append(
-                    policy.forward(observations[idx], info['available_actions'])
-                    )
-
-        observations, rewards, done_flags, infos = env.step(actions)
-        print(rewards)
-
-    env.close()
