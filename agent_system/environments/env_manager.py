@@ -329,12 +329,10 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
         self.save_to_history_buffer(self.pre_text_obs, actions)
         self.pre_text_obs = next_obs
 
-        if to_numpy(dones).any():
-            print("Episode completed")
         next_observations = {
-            'text': self.build_text_obs(next_obs, infos), # TODO: Implement this if needed
+            'text': self.build_text_obs(next_obs, infos),
             'image': None,
-            'anchor': next_obs.copy() # For GiGPO only. anchor observation without any histories, hint, etc. Implement this if needed
+            'anchor': next_obs.copy()
         }
         # add action_valid to infos
         for i, info in enumerate(infos):
@@ -387,7 +385,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(actions)):
             self.buffers[i].append({'text_obs': text_obs[i], 'action': actions[i]})
             
-    def build_text_obs(self, text_obs: List[str], infos: List[List[str]], init: bool = False, history_length: int = 3) -> List[str]:
+    def build_text_obs(self, text_obs: List[str], infos: List[List[str]], init: bool = False, history_length: int = 2) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
@@ -395,9 +393,9 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(text_obs)):
             
             available_actions = self.format_avail_actions(infos[i]['available_actions'])
-            reformatted_available_actions = "\n ".join(f"'{s}'," for s in available_actions)
+            reformatted_available_actions = "\n".join(f"'{s}'," for s in available_actions)
 
-            if init:
+            if init or history_length == 0:
                 obs = WEBSHOP_INIT_TEMPLATE.format(
                     task_description=self.tasks[i],
                     current_observation=text_obs[i],
@@ -568,7 +566,8 @@ def make_envs(config):
         projection_f = partial(webshop_projection)
         envs = WebshopEnvironmentManager(_envs, projection_f, config.env.env_name)
         val_envs = WebshopEnvironmentManager(_val_envs, projection_f, config.env.env_name)
-
+        import time
+        time.sleep((config.data.train_batch_size * group_n + config.data.val_batch_size) * 0.1) # wait for the envs to be ready
         return envs, val_envs
     elif "appworld" in config.env.env_name.lower():
         from agent_system.environments.env_package.appworld import build_appworld_envs, appworld_projection

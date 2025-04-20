@@ -1,7 +1,7 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=4,5
 
 train_data_size=16
 val_data_size=128
@@ -27,7 +27,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.ppo_mini_batch_size=128 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=32 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=16 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
@@ -55,11 +55,11 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_Webshop' \
-    trainer.experiment_name='qwen_2_5_1_5b_gigpo_n5_w1_gamma0_95' \
+    trainer.project_name='verl_webshop' \
+    trainer.experiment_name='qwen_2_5_1_5b_gigpo_n5_w1_gamma0_95_his2' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=50 \
     trainer.test_freq=10 \
-    trainer.total_epochs=200 \
+    trainer.total_epochs=400 \
     trainer.val_before_train=True $@

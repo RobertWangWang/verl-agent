@@ -66,7 +66,7 @@ class EnvironmentManagerBase:
         next_obs, rewards, dones, infos = self.envs.step(actions)
 
         next_observations = {
-            'text': None, # TODO: Implement this if needed
+            'text': None, # Implement this if needed
             'image': next_obs,
             'anchor': None # For GiGPO only. anchor observation without any histories, hint, etc. Implement this if needed
         }
