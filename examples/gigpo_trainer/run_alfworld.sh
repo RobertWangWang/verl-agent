@@ -3,17 +3,21 @@ ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
+train_data_size=16
+val_data_size=128
+group_size=8
+
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
-    --train_data_size 128 \
-    --val_data_size 256
+    --train_data_size $train_data_size \
+    --val_data_size $val_data_size
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
     data.val_files=$HOME/data/verl-agent/text/test.parquet \
-    data.train_batch_size=16 \
-    data.val_batch_size=128 \
+    data.train_batch_size=$train_data_size \
+    data.val_batch_size=$val_data_size \
     data.max_prompt_length=2048 \
     data.max_response_length=2048 \
     data.filter_overlong_prompts=True \
@@ -48,11 +52,11 @@ python3 -m verl.trainer.main_ppo \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=alfworld/AlfredTWEnv \
     env.max_steps=50 \
-    env.rollout.n=8 \
+    env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_AlfredTWEnv' \
-    trainer.experiment_name='qwen_2_5_1_5b_gigpo_w1_gamma0_95' \
+    trainer.experiment_name='qwen_2_5_1_5b_gigpo_n8_w1_gamma0_95' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=10 \

@@ -2,6 +2,7 @@ import gymnasium as gym
 import torch.multiprocessing as mp
 import numpy as np
 from gym_cards.envs import Point24Env, EZPointEnv, BlackjackEnv, NumberLineEnv
+import sys
 
 def _worker(remote, env_id):
     """
@@ -71,7 +72,10 @@ class GymMultiProcessEnv(gym.Env):
 
         self.parent_remotes = []
         self.workers = []
-        ctx = mp.get_context('fork')
+        if sys.platform.startswith("win"):
+            ctx = mp.get_context('spawn')
+        else:
+            ctx = mp.get_context('fork')
 
         for _ in range(self.num_processes):
             parent_remote, child_remote = mp.Pipe()

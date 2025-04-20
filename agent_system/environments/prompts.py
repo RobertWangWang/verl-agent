@@ -161,19 +161,19 @@ Rewards:
 Here are three examples.
 
 Example 1:
-The current formula is: '2'
-Two card numbers are: '6' and '2'
-Since '2*6=12', the correct action is: '*'
+The current formula is: '3'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '+'
 
 Example 2:
-The current formula is: '10+2'
-Two card numbers are: '10' and '2'
-Since '10+2=12', the correct action is: '='
+The current formula is: '3+9'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '='
 
 Example 3:
 The current formula is: ''
-Two card numbers are: '3' and '4'
-Since '3*4=12', the correct action is: '3'
+Two card numbers are: '9' and '3'
+Since '3+9=12', the correct action is: '3'
 ----
 
 Now, you are given two card numbers as shown in the image, and the current formula is: '{text_formula}'
@@ -235,6 +235,35 @@ Your response MUST be a valid JSON object in the following format:
 }}
 """
 
+# --------------------- WebShop --------------------- #
+WEBSHOP_INIT_TEMPLATE = """
+You are an expert autonomous agent operating in the WebShop e‑commerce environment. 
+Your task is to: {task_description}.
+Your current observation is: {current_observation}.
+Your admissible actions of the current situation are: 
+[
+{available_actions}
+].
+
+Now it's your turn to take an action (ONE action only for the current step).
+You should first reason step-by-step about the current situation, then think carefully which admissible action best advances the shopping goal. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
+"""
+
+WEBSHOP_TEMPLATE = """
+You are an expert autonomous agent operating in the WebShop e‑commerce environment.
+Your task is to: {task_description}.
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}.
+Your admissible actions of the current situation are: 
+[
+{available_actions}
+].
+
+Now it's your turn to take an action (ONE action only for the current step).
+You should first reason step-by-step about the current situation, then think carefully which admissible action best advances the shopping goal. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
+"""
 
 # --------------------- Appworld --------------------- #
 APPWORLD_INIT_TEMPLATE = """

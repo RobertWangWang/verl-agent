@@ -86,6 +86,9 @@ class TaskRunner:
         # download the checkpoint from hdfs
         local_path = copy_to_local(config.actor_rollout_ref.model.path)
 
+        from agent_system.environments import make_envs
+        envs, val_envs = make_envs(config)
+
         # instantiate tokenizer
         from verl.utils import hf_tokenizer, hf_processor
         tokenizer = hf_tokenizer(local_path)
@@ -159,9 +162,6 @@ class TaskRunner:
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
         assert config.actor_rollout_ref.rollout.n == 1, "In verl, actor_rollout_ref.rollout.n>1 is for GRPO. In verl+env, we keep n=1, and achieve GRPO by env.rollout.n"
-
-        from agent_system.environments import make_envs
-        envs, val_envs = make_envs(config)
 
         from agent_system.multi_turn_rollout import TrajectoryCollector
         traj_collector = TrajectoryCollector(tokenizer=tokenizer, processor=processor)

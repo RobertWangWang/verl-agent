@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torchvision.transforms as T
+import sys
 
 from alfworld.agents.environment import get_environment
 
@@ -88,7 +89,10 @@ class AlfworldEnvs(gym.Env):
         self.parent_remotes = []
         self.workers = []
 
-        ctx = mp.get_context('fork')
+        if sys.platform.startswith("win"):
+            ctx = mp.get_context('spawn')
+        else:
+            ctx = mp.get_context('fork')
 
         for i in range(self.num_processes):
             parent_remote, child_remote = mp.Pipe()
