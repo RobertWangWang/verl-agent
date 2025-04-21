@@ -65,7 +65,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_sokoban' \
-    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_gigpo_n8_w1_gamma0_95_step15_wo_history' \
+    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_dynamicgigpo_n8_w1_gamma0_95_step15' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \

@@ -422,7 +422,7 @@ class TrajectoryCollector:
         try_count = 0
         while len(total_batch_list) < config.data.train_batch_size * config.env.rollout.n and try_count < max_try_count:
             if len(total_batch_list) > 0:
-                print(f"current_bsz={len(total_batch_list)} < target_bsz={config.data.train_batch_size * config.env.rollout.n}.Keep generating... ({try_count}/{max_try_count})")
+                print(f"current_bsz={len(total_batch_list)} < target_bsz={config.data.train_batch_size * config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
             batch_list, episode_rewards, episode_lengths, success, traj_uid = self.vanilla_multi_turn_loop(
                 gen_batch=gen_batch,
                 actor_rollout_wg=actor_rollout_wg,
