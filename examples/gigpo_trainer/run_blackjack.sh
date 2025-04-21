@@ -7,7 +7,6 @@ train_data_size=32
 val_data_size=128
 group_size=8
 
-
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
     --train_data_size $train_data_size \
