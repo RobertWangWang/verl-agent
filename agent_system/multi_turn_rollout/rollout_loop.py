@@ -9,23 +9,24 @@ import uuid
 from verl.models.transformers.qwen2_vl import get_rope_index
 from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_group_data
 from agent_system.environments import EnvironmentManagerBase
-from typing import List, Tuple, Dict
+from typing import List, Dict
 
 class TrajectoryCollector:
-    def __init__(self, tokenizer: PreTrainedTokenizer, processor=None):
+    def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
         """
         Initialize the TrajectoryProcessor class.
         
         Parameters:
+            config: Configuration object containing data processing settings
             tokenizer (PreTrainedTokenizer): Tokenizer for text encoding and decoding
             processor: Image processor for multimodal inputs
         """
+        self.config = config
         self.tokenizer = tokenizer
         self.processor = processor
 
     def preprocess_single_sample(
         self,
-        config,
         item: int,
         gen_batch: DataProto,
         obs: Dict,
@@ -36,7 +37,6 @@ class TrajectoryCollector:
         
         Parameters:
             item (int): Sample index in the batch
-            config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
             obs (Dict): Environment observation, may contain 'text', 'image', 'anchor' keys
         
@@ -109,7 +109,7 @@ class TrajectoryCollector:
         
         input_ids, attention_mask = verl_F.tokenize_and_postprocess_data(prompt=prompt_with_chat_template,
                                                                             tokenizer=self.tokenizer,
-                                                                            max_length=config.data.max_prompt_length,
+                                                                            max_length=self.config.data.max_prompt_length,
                                                                             pad_token_id=self.tokenizer.pad_token_id,
                                                                             left_pad=True,
                                                                             truncation='error')
@@ -138,14 +138,13 @@ class TrajectoryCollector:
             'data_source': data_source
         })
 
-        if config.data.get('return_raw_chat', False):
+        if self.config.data.get('return_raw_chat', False):
             row_dict['raw_prompt'] = chat.tolist()
         
         return row_dict
 
     def preprocess_batch(
         self,
-        config,
         gen_batch: DataProto, 
         obs: Dict, 
     ) -> DataProto:
@@ -153,7 +152,6 @@ class TrajectoryCollector:
         Process a batch of observation samples, converting environment observations into model-processable format.
         
         Parameters:
-            config: Configuration object containing data processing settings
             gen_batch (DataProto): Batch data containing original prompts
             obs (Dict): Environment observation dictionary
                 - 'text' (None or List[str]): Text observation data
@@ -170,7 +168,6 @@ class TrajectoryCollector:
         for item in range(batch_size):
             # Extract per-sample observations
             processed = self.preprocess_single_sample(
-                config=config,
                 item=item,
                 gen_batch=gen_batch,
                 obs=obs,
@@ -179,10 +176,6 @@ class TrajectoryCollector:
         
         # Aggregate batch data
         batch = collate_fn(processed_samples)
-        
-        # # Add raw prompts if needed
-        # if 'raw_prompt' in processed_samples[0]:
-        #     batch['raw_prompt'] = np.array([s['raw_prompt'] for s in processed_samples])
         
         # Create DataProto with preserved metadata
         new_batch = DataProto.from_single_dict(
@@ -195,7 +188,6 @@ class TrajectoryCollector:
 
     def gather_rollout_data(
             self,
-            config,
             total_batch_list: List[List[Dict]],
             episode_rewards: np.ndarray,
             episode_lengths: np.ndarray,
@@ -206,7 +198,6 @@ class TrajectoryCollector:
         Collect and organize trajectory data, handling batch size adjustments to meet parallel training requirements.
         
         Parameters:
-            config: Configuration object containing training and batch settings
             total_batch_list (List[List[Dict]): List of trajectory data for each environment
             episode_rewards (np.ndarray): Total rewards for each environment
             episode_lengths (np.ndarray): Total steps for each environment
@@ -263,7 +254,6 @@ class TrajectoryCollector:
             gen_batch: DataProto, 
             actor_rollout_wg, 
             envs: EnvironmentManagerBase,
-            config,
             ) -> DataProto:
         """
         Collects trajectories through parallel agent-environment agent_loop.
@@ -271,7 +261,6 @@ class TrajectoryCollector:
             gen_batch (DataProto): Initial batch with prompts to start the agent_loop
             actor_rollout_wg (WorkerGroup): Worker group containing the actor model for policy decisions
             envs (EnvironmentManagerBase): Environment manager containing parallel environment instances
-            config: Configuration dictionary with environment and model settings
         
         Returns:
             total_batch_list (List[Dict]): List of trajectory data for each environment
@@ -285,17 +274,17 @@ class TrajectoryCollector:
 
         # Initialize trajectory collection
         lenght_obs = len(obs['text']) if obs['text'] is not None else len(obs['image'])
-        if len(gen_batch.batch) != lenght_obs and config.env.rollout.n > 0:
-            gen_batch = gen_batch.repeat(repeat_times=config.env.rollout.n, interleave=True)
+        if len(gen_batch.batch) != lenght_obs and self.config.env.rollout.n > 0:
+            gen_batch = gen_batch.repeat(repeat_times=self.config.env.rollout.n, interleave=True)
         assert len(gen_batch.batch) == lenght_obs, f"gen_batch size {len(gen_batch.batch)} does not match obs size {lenght_obs}"
 
         batch_size = len(gen_batch.batch['input_ids'])
         batch_output = None
         
-        if config.env.rollout.n > 0: # env grouping
+        if self.config.env.rollout.n > 0: # env grouping
             uid_batch = []
             for i in range(batch_size):
-                if i % config.env.rollout.n == 0:
+                if i % self.config.env.rollout.n == 0:
                     uid = str(uuid.uuid4())
                 uid_batch.append(uid)
             uid_batch = np.array(uid_batch, dtype=object)
@@ -309,13 +298,10 @@ class TrajectoryCollector:
         episode_lengths = np.zeros(batch_size, dtype=np.int32)
         episode_rewards = np.zeros(batch_size, dtype=np.float32)
         # Trajectory collection loop
-        for _step in range(config.env.max_steps):
+        for _step in range(self.config.env.max_steps):
             active_masks = np.logical_not(is_done)
 
-            batch = self.preprocess_batch(config=config,
-                                            gen_batch=gen_batch,
-                                            obs=obs,
-                                            )
+            batch = self.preprocess_batch(gen_batch=gen_batch, obs=obs)
 
             if 'multi_modal_inputs' in batch.non_tensor_batch.keys():
                 batch_input = batch.pop(
@@ -392,7 +378,6 @@ class TrajectoryCollector:
             gen_batch: DataProto, 
             actor_rollout_wg, 
             envs: EnvironmentManagerBase,
-            config,
             ) -> DataProto:
         """
         Conduct dynamic rollouts until a target batch size is met. 
@@ -403,7 +388,6 @@ class TrajectoryCollector:
             gen_batch (DataProto): Initial batch for rollout.
             actor_rollout_wg: Actor model workers for generating responses.
             envs (EnvironmentManagerBase): Environment manager instance.
-            config: Configuration object.
 
         Returns:
             total_batch_list (List[Dict]): Complete set of rollout steps.
@@ -420,25 +404,24 @@ class TrajectoryCollector:
         try_count: int = 0
         max_try_count = self.config.algorithm.filter_groups.max_num_gen_batches
 
-        while len(total_batch_list) < config.data.train_batch_size * config.env.rollout.n and try_count < max_try_count:
+        while len(total_batch_list) < self.config.data.train_batch_size * self.config.env.rollout.n and try_count < max_try_count:
 
             if len(total_batch_list) > 0:
-                print(f"current num={len(total_batch_list)} < target num={config.data.train_batch_size * config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
+                print(f"valid num={len(total_batch_list)} < target num={self.config.data.train_batch_size * self.config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
             try_count += 1
 
             batch_list, episode_rewards, episode_lengths, success, traj_uid = self.vanilla_multi_turn_loop(
                 gen_batch=gen_batch,
                 actor_rollout_wg=actor_rollout_wg,
                 envs=envs,
-                config=config,
             )
             batch_list, episode_rewards, episode_lengths, success, traj_uid = filter_group_data(batch_list=batch_list,
                                                                                                 episode_rewards=episode_rewards, 
                                                                                                 episode_lengths=episode_lengths, 
                                                                                                 success=success, 
                                                                                                 traj_uid=traj_uid, 
-                                                                                                config=config,
-                                                                                                last_try= (try_count == max_try_count),
+                                                                                                config=self.config,
+                                                                                                last_try=(try_count == max_try_count),
                                                                                                 )
             
             total_batch_list += batch_list
@@ -459,31 +442,28 @@ class TrajectoryCollector:
             gen_batch: DataProto, 
             actor_rollout_wg, 
             envs: EnvironmentManagerBase,
-            config,
             is_train: bool = True,
             ) -> DataProto:
         """
-        Select and run the appropriate rollout loop (dynamic or vanilla) based on config.
+        Select and run the appropriate rollout loop (dynamic or vanilla).
 
         Args:
             gen_batch (DataProto): Initial prompt batch.
             actor_rollout_wg: Actor model workers.
             envs (EnvironmentManagerBase): Environment manager for interaction.
-            config: Configuration object.
             is_train (bool): Whether in training mode (affects dynamic sampling).
 
         Returns:
             DataProto: Final collected trajectory data with metadata.
         """
         # Initial observations from the environment
-        if config.algorithm.filter_groups.enable and is_train:
+        if self.config.algorithm.filter_groups.enable and is_train:
             # Dynamic Sampling (for DAPO and Dynamic GiGPO)
             total_batch_list, total_episode_rewards, total_episode_lengths, total_success, total_traj_uid = \
                 self.dynamic_multi_turn_loop(
                 gen_batch=gen_batch,
                 actor_rollout_wg=actor_rollout_wg,
                 envs=envs,
-                config=config,
             )
         else:
             # Vanilla Sampling   
@@ -492,7 +472,6 @@ class TrajectoryCollector:
                 gen_batch=gen_batch,
                 actor_rollout_wg=actor_rollout_wg,
                 envs=envs,
-                config=config,
             )
         assert len(total_batch_list) == len(total_episode_rewards)
         assert len(total_batch_list) == len(total_episode_lengths)
@@ -501,7 +480,6 @@ class TrajectoryCollector:
 
         # Create trajectory data
         gen_batch_output: DataProto = self.gather_rollout_data(
-            config=config,
             total_batch_list=total_batch_list,
             episode_rewards=total_episode_rewards,
             episode_lengths=total_episode_lengths,
