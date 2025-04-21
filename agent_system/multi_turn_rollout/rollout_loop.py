@@ -1,5 +1,4 @@
 import torch
-from tensordict import TensorDict
 import numpy as np
 from verl import DataProto
 from verl.utils.dataset.rl_dataset import collate_fn
@@ -7,11 +6,9 @@ from verl.utils.model import compute_position_id_with_mask
 import verl.utils.torch_functional as verl_F
 from transformers import PreTrainedTokenizer
 import uuid
-import pandas as pd
 from verl.models.transformers.qwen2_vl import get_rope_index
-from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy
+from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_rollout_data
 from agent_system.environments import EnvironmentManagerBase
-import math
 from typing import List, Tuple, Dict
 
 class TrajectoryCollector:
@@ -261,7 +258,7 @@ class TrajectoryCollector:
         )
         return gen_batch_output
 
-    def multi_turn_loop(
+    def vanilla_multi_turn_loop(
             self,
             gen_batch: DataProto, 
             actor_rollout_wg, 
@@ -269,9 +266,7 @@ class TrajectoryCollector:
             config,
             ) -> DataProto:
         """
-        Collects trajectories through parallel agent-environment agent_loop, handling early termination 
-        while continuing to interact with other active environments.
-        
+        Collects trajectories through parallel agent-environment agent_loop.
         Parameters:
             gen_batch (DataProto): Initial batch with prompts to start the agent_loop
             actor_rollout_wg (WorkerGroup): Worker group containing the actor model for policy decisions
@@ -279,7 +274,11 @@ class TrajectoryCollector:
             config: Configuration dictionary with environment and model settings
         
         Returns:
-            DataProto: Trajectory data with sequences, rewards, and other agent_loop information
+            total_batch_list (List[Dict]): List of trajectory data for each environment
+            episode_rewards (np.ndarray): Total rewards for each environment
+            episode_lengths (np.ndarray): Total steps for each environment
+            success (Dict[str, np.ndarray]): Success samples for each environment
+            traj_uid (np.ndarray): Trajectory unique identifiers
         """
         # Initial observations from the environment
         obs, infos = envs.reset()
@@ -291,7 +290,6 @@ class TrajectoryCollector:
         assert len(gen_batch.batch) == lenght_obs, f"gen_batch size {len(gen_batch.batch)} does not match obs size {lenght_obs}"
 
         batch_size = len(gen_batch.batch['input_ids'])
-        device = gen_batch.batch['input_ids'].device
         batch_output = None
         
         if config.env.rollout.n > 0: # env grouping
@@ -386,15 +384,127 @@ class TrajectoryCollector:
                     episode_rewards=episode_rewards, 
                     episode_lengths=episode_lengths,
                     )
+        
+        return total_batch_list, episode_rewards, episode_lengths, success, traj_uid
+    
+    def dynamic_multi_turn_loop(
+            self,
+            gen_batch: DataProto, 
+            actor_rollout_wg, 
+            envs: EnvironmentManagerBase,
+            config,
+            max_try_count: int = 10, # avoid infinite loop
+            ) -> DataProto:
+        """
+        Conduct dynamic rollouts until a target batch size is met. 
+        Keeps sampling until the desired number of effective trajectories is collected.
+        Adopted from DAPO (https://arxiv.org/abs/2503.14476)
+
+        Args:
+            gen_batch (DataProto): Initial batch for rollout.
+            actor_rollout_wg: Actor model workers for generating responses.
+            envs (EnvironmentManagerBase): Environment manager instance.
+            config: Configuration object.
+            max_try_count (int): Maximum retry count to avoid infinite sampling.
+
+        Returns:
+            total_batch_list (List[Dict]): Complete set of rollout steps.
+            total_episode_rewards (np.ndarray): Accumulated rewards.
+            total_episode_lengths (np.ndarray): Lengths per episode.
+            total_success (Dict[str, np.ndarray]): Success metrics.
+            total_traj_uid (np.ndarray): Trajectory IDs.
+        """
+        total_batch_list = []
+        total_episode_rewards = []
+        total_episode_lengths = []
+        total_success = []
+        total_traj_uid = []
+        try_count = 0
+        while len(total_batch_list) < config.data.train_batch_size * config.env.rollout.n and try_count < max_try_count:
+            if len(total_batch_list) > 0:
+                print(f"current_bsz={len(total_batch_list)} < target_bsz={config.data.train_batch_size * config.env.rollout.n}.Keep generating... ({try_count}/{max_try_count})")
+            batch_list, episode_rewards, episode_lengths, success, traj_uid = self.vanilla_multi_turn_loop(
+                gen_batch=gen_batch,
+                actor_rollout_wg=actor_rollout_wg,
+                envs=envs,
+                config=config,
+            )
+            batch_list, episode_rewards, episode_lengths, success, traj_uid = filter_rollout_data(batch_list=batch_list,
+                                                                                                episode_rewards=episode_rewards, 
+                                                                                                episode_lengths=episode_lengths, 
+                                                                                                success=success, 
+                                                                                                traj_uid=traj_uid, 
+                                                                                                config=config,
+                                                                                                )
+            
+            total_batch_list += batch_list
+            total_episode_rewards.append(episode_rewards)
+            total_episode_lengths.append(episode_lengths)
+            total_success.append(success)
+            total_traj_uid.append(traj_uid)
+            
+            try_count += 1
+
+        total_episode_rewards = np.concatenate(total_episode_rewards, axis=0)
+        total_episode_lengths = np.concatenate(total_episode_lengths, axis=0)
+        total_success = {key: np.concatenate([success[key] for success in total_success], axis=0) for key in total_success[0].keys()}
+        total_traj_uid = np.concatenate(total_traj_uid, axis=0)
+
+        return total_batch_list, total_episode_rewards, total_episode_lengths, total_success, total_traj_uid
+
+    def multi_turn_loop(
+            self,
+            gen_batch: DataProto, 
+            actor_rollout_wg, 
+            envs: EnvironmentManagerBase,
+            config,
+            is_train: bool = True,
+            ) -> DataProto:
+        """
+        Select and run the appropriate rollout loop (dynamic or vanilla) based on config.
+
+        Args:
+            gen_batch (DataProto): Initial prompt batch.
+            actor_rollout_wg: Actor model workers.
+            envs (EnvironmentManagerBase): Environment manager for interaction.
+            config: Configuration object.
+            is_train (bool): Whether in training mode (affects dynamic sampling).
+
+        Returns:
+            DataProto: Final collected trajectory data with metadata.
+        """
+        # Initial observations from the environment
+        if config.actor_rollout_ref.actor.use_dynamic_sampling and is_train:
+            # Dynamic Sampling (for DAPO and Dynamic GiGPO)
+            total_batch_list, total_episode_rewards, total_episode_lengths, total_success, total_traj_uid = \
+                self.dynamic_multi_turn_loop(
+                gen_batch=gen_batch,
+                actor_rollout_wg=actor_rollout_wg,
+                envs=envs,
+                config=config,
+            )
+        else:
+            # Vanilla Sampling   
+            total_batch_list, total_episode_rewards, total_episode_lengths, total_success, total_traj_uid = \
+                self.vanilla_multi_turn_loop(
+                gen_batch=gen_batch,
+                actor_rollout_wg=actor_rollout_wg,
+                envs=envs,
+                config=config,
+            )
+        assert len(total_batch_list) == len(total_episode_rewards)
+        assert len(total_batch_list) == len(total_episode_lengths)
+        assert len(total_batch_list) == len(total_traj_uid)
+        
 
         # Create trajectory data
         gen_batch_output: DataProto = self.gather_rollout_data(
             config=config,
             total_batch_list=total_batch_list,
-            episode_rewards=episode_rewards,
-            episode_lengths=episode_lengths,
-            success=success,
-            traj_uid=traj_uid,
+            episode_rewards=total_episode_rewards,
+            episode_lengths=total_episode_lengths,
+            success=total_success,
+            traj_uid=total_traj_uid,
         )
         
         return gen_batch_output

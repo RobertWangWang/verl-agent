@@ -594,6 +594,7 @@ class RayPPOTrainer(object):
                                                     actor_rollout_wg=self.actor_rollout_wg,
                                                     envs=self.val_envs,
                                                     config=self.config,
+                                                    is_train=False,
                                                     )
             print('validation generation end')
             del test_batch
