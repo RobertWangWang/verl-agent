@@ -385,7 +385,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(actions)):
             self.buffers[i].append({'text_obs': text_obs[i], 'action': actions[i]})
             
-    def build_text_obs(self, text_obs: List[str], infos: List[List[str]], init: bool = False, history_length: int = 2) -> List[str]:
+    def build_text_obs(self, text_obs: List[str], infos: List[List[str]], init: bool = False, history_length: int = 1) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
