@@ -5,19 +5,19 @@ export CUDA_VISIBLE_DEVICES=4,5
 
 train_data_size=32
 val_data_size=128
-group_size=8
+group_size=5
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
-    --train_data_size $train_data_size \
-    --val_data_size $val_data_size
+    --train_data_size ${train_data_size} \
+    --val_data_size ${val_data_size}
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/verl-agent/visual/train.parquet \
     data.val_files=$HOME/data/verl-agent/visual/test.parquet \
-    data.train_batch_size=$train_data_size \
-    data.val_batch_size=$val_data_size \
+    data.train_batch_size=${train_data_size} \
+    data.val_batch_size=${val_data_size} \
     data.max_prompt_length=1024 \
     data.max_response_length=512 \
     data.filter_overlong_prompts=True \
@@ -53,7 +53,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=gym_cards/EZPoints-v0 \
     env.max_steps=8 \
-    env.rollout.n=$group_size \
+    env.rollout.n=${group_size} \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_ezpoints' \

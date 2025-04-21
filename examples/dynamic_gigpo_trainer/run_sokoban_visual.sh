@@ -1,11 +1,15 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=2,3
 
 train_data_size=32
 val_data_size=128
 group_size=8
+
+clip_ratio_low=0.2
+clip_ratio_high=0.28
+use_dynamic_sampling=True
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
@@ -13,7 +17,7 @@ python3 -m examples.data_preprocess.prepare \
     --val_data_size $val_data_size
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=grpo \
+    algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/verl-agent/visual/train.parquet \
     data.val_files=$HOME/data/verl-agent/visual/test.parquet \
     data.train_batch_size=$train_data_size \
@@ -32,6 +36,9 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+    actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
+    actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
+    actor_rollout_ref.actor.use_dynamic_sampling=${use_dynamic_sampling} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -49,6 +56,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
+    algorithm.gamma=0.95 \
+    algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=Sokoban \
     env.max_steps=15 \
     env.rollout.n=$group_size \
@@ -56,7 +65,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_sokoban' \
-    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_grpo_n8_step15' \
+    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_dynamicgigpo_n8_w1_gamma0_95_step15' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \

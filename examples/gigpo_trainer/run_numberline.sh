@@ -3,17 +3,21 @@ ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
+train_data_size=32
+val_data_size=64
+group_size=5
+
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
-    --train_data_size 64 \
-    --val_data_size 64
+    --train_data_size $train_data_size \
+    --val_data_size $val_data_size
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=gigpo \
     data.train_files=$HOME/data/verl-agent/visual/train.parquet \
     data.val_files=$HOME/data/verl-agent/visual/test.parquet \
-    data.train_batch_size=32 \
-    data.val_batch_size=64 \
+    data.train_batch_size=$train_data_size \
+    data.val_batch_size=$val_data_size \
     data.max_prompt_length=1024 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
@@ -49,7 +53,7 @@ python3 -m verl.trainer.main_ppo \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=gym_cards/NumberLine-v0 \
     env.max_steps=10 \
-    env.rollout.n=5 \
+    env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_numberLine' \

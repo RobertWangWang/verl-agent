@@ -30,7 +30,9 @@ actor_rollout_ref:
     use_dynamic_bsz: False
     ppo_max_token_len_per_gpu: 16384 # n * ${data.max_prompt_length} + ${data.max_response_length}
     grad_clip: 1.0
-    clip_ratio: 0.2
+    clip_ratio: 0.2 # default value if clip_ratio_low and clip_ratio_high are not specified
+    clip_ratio_low: 0.2 # DAPO from https://arxiv.org/abs/2503.14476
+    clip_ratio_high: 0.2 # DAPO from https://arxiv.org/abs/2503.14476
     entropy_coeff: 0.001
     use_invalid_action_penalty: True
     invalid_action_penalty_coef: 0.1
@@ -39,6 +41,7 @@ actor_rollout_ref:
     kl_loss_coef: 0.001 # for grpo
     kl_loss_type: low_var_kl # for grpo
     ppo_epochs: 1
+    use_dynamic_sampling: False # DAPO from https://arxiv.org/abs/2503.14476
     shuffle: False
     ulysses_sequence_parallel_size: 1 # sp size
     checkpoint:

@@ -3,35 +3,41 @@ ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
-train_data_size=32
+train_data_size=16
 val_data_size=128
-group_size=8
+group_size=5
+
+clip_ratio_low=0.2
+clip_ratio_high=0.28
+use_dynamic_sampling=True
 
 python3 -m examples.data_preprocess.prepare \
-    --mode 'visual' \
-    --train_data_size $train_data_size \
-    --val_data_size $val_data_size
+    --mode 'text' \
+    --train_data_size ${train_data_size} \
+    --val_data_size ${val_data_size}
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
-    data.train_files=$HOME/data/verl-agent/visual/train.parquet \
-    data.val_files=$HOME/data/verl-agent/visual/test.parquet \
-    data.train_batch_size=$train_data_size \
-    data.val_batch_size=$val_data_size \
-    data.max_prompt_length=1024 \
-    data.max_response_length=512 \
+    data.train_files=$HOME/data/verl-agent/text/train.parquet \
+    data.val_files=$HOME/data/verl-agent/text/test.parquet \
+    data.train_batch_size=${train_data_size} \
+    data.val_batch_size=${val_data_size} \
+    data.max_prompt_length=4096 \
+    data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
-    data.image_key=images \
     data.return_raw_chat=True \
-    actor_rollout_ref.model.path=Qwen/Qwen2.5-VL-3B-Instruct \
+    actor_rollout_ref.model.path=Qwen/Qwen2.5-1.5B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
+    actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
+    actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
+    actor_rollout_ref.actor.use_dynamic_sampling=${use_dynamic_sampling} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -49,17 +55,16 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    env.env_name=Sokoban \
+    env.env_name=Webshop \
     env.max_steps=15 \
-    env.rollout.n=$group_size \
-    env.sokoban.mode='rgb_array' \
+    env.rollout.n=${group_size} \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban' \
-    trainer.experiment_name='6x6_visual_qwen_2_5_vl_3b_grpo_n8_step15' \
+    trainer.project_name='verl_webshop' \
+    trainer.experiment_name='qwen_2_5_1_5b_dapo_n5_his1' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=-1 \
     trainer.test_freq=10 \
-    trainer.total_epochs=500 \
+    trainer.total_epochs=400 \
     trainer.val_before_train=True $@

@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import random
-from typing import List
+from typing import List, Tuple, Dict
 import math
 from PIL import Image
 from verl import DataProto
@@ -99,3 +99,47 @@ def adjust_batch(config, data: DataProto) -> DataProto:
         adjusted_batch = data
 
     return adjusted_batch
+
+
+def filter_rollout_data(batch_list : List[Dict],
+                        episode_rewards: np.ndarray,
+                        episode_lengths: np.ndarray,
+                        success: Dict[str, np.ndarray],
+                        traj_uid: np.ndarray,
+                        config,
+                        ):
+    """
+    Dynamic Sampling:
+    Over-sample and filter out episode group in which all episodes have the same rewards.
+    Adopted from DAPO (https://arxiv.org/abs/2503.14476)
+    """
+    batch_size = config.data.train_batch_size
+    group_n = config.env.rollout.n
+    if group_n <= 1:
+        print("Warning: group_n <= 1, no need to adopt dynamic sampling")
+
+    # Handle each group
+    keep_indices = np.array([], dtype=np.int64)
+    for i in range(batch_size):
+        # Get the indices of the current group
+        group_indices = np.arange(i * group_n, (i + 1) * group_n)
+        group_rewards = episode_rewards[group_indices]
+
+        # check if all group_traj_uid are the same
+        for index in group_indices:
+            assert batch_list[index][0]['uid'] == batch_list[group_indices[0]][0]['uid']
+
+        # Check if all rewards in the group are the same
+        if not np.all(group_rewards == group_rewards[0]):
+            # If so, keep the entire group, otherwise, remove it
+            keep_indices = np.concatenate((keep_indices, group_indices))
+    
+    # Filter the batch_list, episode_rewards, episode_lengths, and success based on the keep_indices
+    batch_list = [batch_list[i] for i in keep_indices]
+    episode_rewards = episode_rewards[keep_indices]
+    episode_lengths = episode_lengths[keep_indices]
+    success = {key: value[keep_indices] for key, value in success.items()}
+    traj_uid = traj_uid[keep_indices]
+
+    return batch_list, episode_rewards, episode_lengths, success, traj_uid
+
