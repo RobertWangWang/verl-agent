@@ -10,7 +10,8 @@ group_size=8
 
 clip_ratio_low=0.2
 clip_ratio_high=0.28
-use_dynamic_sampling=True
+enable_filter_groups=True
+max_num_gen_batches=10
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -38,7 +39,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
-    actor_rollout_ref.actor.use_dynamic_sampling=${use_dynamic_sampling} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -56,6 +56,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
+    algorithm.filter_groups.enable=${enable_filter_groups} \
+    algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     env.env_name=alfworld/AlfredTWEnv \
     env.max_steps=50 \
     env.rollout.n=${group_size} \

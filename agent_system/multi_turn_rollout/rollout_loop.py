@@ -7,7 +7,7 @@ import verl.utils.torch_functional as verl_F
 from transformers import PreTrainedTokenizer
 import uuid
 from verl.models.transformers.qwen2_vl import get_rope_index
-from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_rollout_data
+from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_group_data
 from agent_system.environments import EnvironmentManagerBase
 from typing import List, Tuple, Dict
 
@@ -393,7 +393,6 @@ class TrajectoryCollector:
             actor_rollout_wg, 
             envs: EnvironmentManagerBase,
             config,
-            max_try_count: int = 10, # avoid infinite loop
             ) -> DataProto:
         """
         Conduct dynamic rollouts until a target batch size is met. 
@@ -405,7 +404,6 @@ class TrajectoryCollector:
             actor_rollout_wg: Actor model workers for generating responses.
             envs (EnvironmentManagerBase): Environment manager instance.
             config: Configuration object.
-            max_try_count (int): Maximum retry count to avoid infinite sampling.
 
         Returns:
             total_batch_list (List[Dict]): Complete set of rollout steps.
@@ -420,10 +418,12 @@ class TrajectoryCollector:
         total_success = []
         total_traj_uid = []
         try_count: int = 0
+        max_try_count = self.config.algorithm.filter_groups.max_num_gen_batches
+
         while len(total_batch_list) < config.data.train_batch_size * config.env.rollout.n and try_count < max_try_count:
 
             if len(total_batch_list) > 0:
-                print(f"current_bsz={len(total_batch_list)} < target_bsz={config.data.train_batch_size * config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
+                print(f"current num={len(total_batch_list)} < target num={config.data.train_batch_size * config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
             try_count += 1
 
             batch_list, episode_rewards, episode_lengths, success, traj_uid = self.vanilla_multi_turn_loop(
@@ -432,7 +432,7 @@ class TrajectoryCollector:
                 envs=envs,
                 config=config,
             )
-            batch_list, episode_rewards, episode_lengths, success, traj_uid = filter_rollout_data(batch_list=batch_list,
+            batch_list, episode_rewards, episode_lengths, success, traj_uid = filter_group_data(batch_list=batch_list,
                                                                                                 episode_rewards=episode_rewards, 
                                                                                                 episode_lengths=episode_lengths, 
                                                                                                 success=success, 
@@ -476,7 +476,7 @@ class TrajectoryCollector:
             DataProto: Final collected trajectory data with metadata.
         """
         # Initial observations from the environment
-        if config.actor_rollout_ref.actor.use_dynamic_sampling and is_train:
+        if config.algorithm.filter_groups.enable and is_train:
             # Dynamic Sampling (for DAPO and Dynamic GiGPO)
             total_batch_list, total_episode_rewards, total_episode_lengths, total_success, total_traj_uid = \
                 self.dynamic_multi_turn_loop(
