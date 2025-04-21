@@ -589,11 +589,11 @@ class RayPPOTrainer(object):
             # # unpad
             # test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
 
+            ################ agent-environment loop ###############
             test_output_gen_batch = self.traj_collector.multi_turn_loop(
                                                     gen_batch=test_gen_batch,
                                                     actor_rollout_wg=self.actor_rollout_wg,
                                                     envs=self.val_envs,
-                                                    config=self.config,
                                                     is_train=False,
                                                     )
             print('validation generation end')
@@ -893,12 +893,12 @@ class RayPPOTrainer(object):
                     with _timer('gen', timing_raw):
                         # gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
 
-                        ################ agent loop ###############
+                        ################ agent-environment loop ###############
                         gen_batch_output = self.traj_collector.multi_turn_loop(
                                                                 gen_batch=gen_batch,
                                                                 actor_rollout_wg=self.actor_rollout_wg,
                                                                 envs=self.envs,
-                                                                config=self.config,
+                                                                is_train=True,
                                                                 )
                     if self.config.algorithm.adv_estimator == AdvantageEstimator.REMAX:
                         with _timer('gen_max', timing_raw):
