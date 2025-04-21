@@ -9,7 +9,8 @@ group_size=5
 
 clip_ratio_low=0.2
 clip_ratio_high=0.28
-use_dynamic_sampling=True
+enable_filter_groups=True
+max_num_gen_batches=10
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -23,7 +24,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=${train_data_size} \
     data.val_batch_size=${val_data_size} \
     data.max_prompt_length=4096 \
-    data.max_response_length=1024 \
+    data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
@@ -37,7 +38,6 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.clip_ratio_low=${clip_ratio_low} \
     actor_rollout_ref.actor.clip_ratio_high=${clip_ratio_high} \
-    actor_rollout_ref.actor.use_dynamic_sampling=${use_dynamic_sampling} \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -55,16 +55,18 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
+    algorithm.filter_groups.enable=${enable_filter_groups} \
+    algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     env.env_name=Webshop \
     env.max_steps=15 \
     env.rollout.n=${group_size} \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_webshop' \
-    trainer.experiment_name='qwen_2_5_1_5b_dapo_n5_his1' \
+    trainer.experiment_name='qwen_2_5_1_5b_dapo_n5_wo_history' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=10 \
+    trainer.test_freq=5 \
     trainer.total_epochs=400 \
     trainer.val_before_train=True $@

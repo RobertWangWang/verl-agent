@@ -101,7 +101,7 @@ def adjust_batch(config, data: DataProto) -> DataProto:
     return adjusted_batch
 
 
-def filter_rollout_data(batch_list : List[Dict],
+def filter_group_data(batch_list : List[Dict],
                         episode_rewards: np.ndarray,
                         episode_lengths: np.ndarray,
                         success: Dict[str, np.ndarray],
