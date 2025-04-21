@@ -64,10 +64,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_ezpoints' \
-    trainer.experiment_name='qwen_2_5_vl_3b_dynamicgigpo_n8_w1_gamma0_95' \
+    trainer.experiment_name='qwen_2_5_vl_3b_dynamicgigpo_n5_w1_gamma0_95' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=10 \
+    trainer.test_freq=5 \
     trainer.total_epochs=100 \
     trainer.val_before_train=True $@

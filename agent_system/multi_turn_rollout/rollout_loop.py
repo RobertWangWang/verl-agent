@@ -419,10 +419,13 @@ class TrajectoryCollector:
         total_episode_lengths = []
         total_success = []
         total_traj_uid = []
-        try_count = 0
+        try_count: int = 0
         while len(total_batch_list) < config.data.train_batch_size * config.env.rollout.n and try_count < max_try_count:
+
             if len(total_batch_list) > 0:
                 print(f"current_bsz={len(total_batch_list)} < target_bsz={config.data.train_batch_size * config.env.rollout.n}. Keep generating... ({try_count}/{max_try_count})")
+            try_count += 1
+
             batch_list, episode_rewards, episode_lengths, success, traj_uid = self.vanilla_multi_turn_loop(
                 gen_batch=gen_batch,
                 actor_rollout_wg=actor_rollout_wg,
@@ -435,6 +438,7 @@ class TrajectoryCollector:
                                                                                                 success=success, 
                                                                                                 traj_uid=traj_uid, 
                                                                                                 config=config,
+                                                                                                last_try= (try_count == max_try_count),
                                                                                                 )
             
             total_batch_list += batch_list
@@ -442,8 +446,6 @@ class TrajectoryCollector:
             total_episode_lengths.append(episode_lengths)
             total_success.append(success)
             total_traj_uid.append(traj_uid)
-            
-            try_count += 1
 
         total_episode_rewards = np.concatenate(total_episode_rewards, axis=0)
         total_episode_lengths = np.concatenate(total_episode_lengths, axis=0)
