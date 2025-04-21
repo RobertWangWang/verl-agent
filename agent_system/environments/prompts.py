@@ -157,25 +157,6 @@ Rewards:
 +10: if the formula evaluates exactly to 12.
 0: otherwise (e.g., using a number not shown on the cards, reusing a number, incorrect syntax, not evaluating to 12).
 
-----
-Here are three examples.
-
-Example 1:
-The current formula is: '3'
-Two card numbers are: '9' and '3'
-Since '3+9=12', the correct action is: '+'
-
-Example 2:
-The current formula is: '3+9'
-Two card numbers are: '9' and '3'
-Since '3+9=12', the correct action is: '='
-
-Example 3:
-The current formula is: ''
-Two card numbers are: '9' and '3'
-Since '3+9=12', the correct action is: '3'
-----
-
 Now, you are given two card numbers as shown in the image, and the current formula is: '{text_formula}'
 It's your turn to append the next character.
 

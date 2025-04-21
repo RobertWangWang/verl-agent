@@ -12,15 +12,11 @@
   Prior works like [RAGEN](https://github.com/RAGEN-AI/RAGEN) concatenate all past states and responses, causing the input/output length to grow with each step.
   We implement a step-wise independent interaction paradigm that aligns with standard RL pipelines. Each step is processed individually, without concatenating the entire interaction history into a single input. This makes `verl-agent` highly scalable for long-horizon tasks.
   
-- Parallelized Gym-Style Environments
+- Parallelized Gym-Style Environments and Group Environments
 
-  We provide a gym-style interface with support for parallelized environments. This enables high-throughput rollouts, speeding up training. 
+  `verl-agent` provides a gym-style interface with support for parallelized environments. This enables high-throughput rollouts, speeding up training. In addtion, `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`. This is especially useful for algorithms like GRPO and DAPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
 
-- Group Environments for Consistent Rollouts
-
-  `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`, ensuring consistent evaluation or policy training. This is especially useful for algorithms like GRPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
-
-- Rich Agent Environment Support
+- Rich Agent Environment
   
   `verl-agent` offers a diverse set of interactive environments including embodied AI environments like [ALFWorld](https://github.com/alfworld/alfworld), visual games such as [Sokoban](https://github.com/mpSchrader/gym-sokoban) and [Gym Cards](https://github.com/RL4VLM/RL4VLM/blob/main/gym-cards/README.md), and digital interface control tasks like [WebShop](https://github.com/princeton-nlp/WebShop) and [AppWorld](https://github.com/stonybrooknlp/appworld/) (experimental). 
 
@@ -54,49 +50,62 @@ We provide out-of-the-box scripts to train agents in various environments.
 ### ALFWorld
 
 ```bash
-bash examples/gigpo_trainer/run_alfworld.sh
+bash examples/grpo_trainer/run_alfworld.sh # GRPO
 ```
 ```bash
-bash examples/grpo_trainer/run_alfworld.sh
+bash examples/dapo_trainer/run_alfworld.sh # DAPO
+```
+```bash
+bash examples/gigpo_trainer/run_alfworld.sh # GiGPO
+```
+```bash
+bash examples/dynamic_gigpo_trainer/run_alfworld.sh # Dynamic GiGPO
 ```
 
 ### Sokoban
 
 ```bash
-bash examples/gigpo_trainer/run_sokoban_visual.sh
+bash examples/grpo_trainer/run_sokoban_visual.sh # GRPO
 ```
-
 ```bash
-bash examples/grpo_trainer/run_sokoban_visual.sh
+bash examples/dapo_trainer/run_sokoban_visual.sh # DAPO
+```
+```bash
+bash examples/gigpo_trainer/run_sokoban_visual.sh # GiGPO
+```
+```bash
+bash examples/dynamic_gigpo_trainer/run_sokoban_visual.sh # Dynamic GiGPO
 ```
 
 ### Gym Cards
 
 ```bash
-bash examples/gigpo_trainer/run_numberline.sh
+bash examples/grpo_trainer/run_ezpoints.sh # GRPO
 ```
-
 ```bash
-bash examples/grpo_trainer/run_numberline.sh
+bash examples/dapo_trainer/run_ezpoints.sh # DAPO
+```
+```bash
+bash examples/gigpo_trainer/run_ezpoints.sh # GiGPO
+```
+```bash
+bash examples/dynamic_gigpo_trainer/run_ezpoints.sh # Dynamic GiGPO
 ```
 
 ### WebShop
+
 ```bash
-bash examples/gigpo_trainer/run_webshop.sh
+bash examples/grpo_trainer/run_webshop.sh # GRPO
 ```
-
 ```bash
-bash examples/grpo_trainer/run_webshop.sh
+bash examples/dapo_trainer/run_webshop.sh # DAPO
 ```
-
-### Appworld (Experimental)
 ```bash
-bash examples/gigpo_trainer/run_appworld.sh
-``` 
-
+bash examples/gigpo_trainer/run_webshop.sh # GiGPO
+```
 ```bash
-bash examples/grpo_trainer/run_appworld.sh
-``` 
+bash examples/dynamic_gigpo_trainer/run_webshop.sh # Dynamic GiGPO
+```
 
 ## Acknowledgement
 
@@ -104,3 +113,4 @@ We gratefully acknowledge the contributions of the [veRL](https://github.com/vol
 
 Special thanks to the [RAGEN](https://github.com/RAGEN-AI/RAGEN) project for their codebase, which inspired early design choices during the development of `verl-agent`.
 
+We also thank the developers of [ALFWorld](https://github.com/alfworld/alfworld), [Sokoban](https://github.com/mpSchrader/gym-sokoban), [Gym Cards](https://github.com/RL4VLM/RL4VLM/tree/main/gym-cards), [WebShop](https://github.com/princeton-nlp/WebShop), and [AppWorld](https://github.com/stonybrooknlp/appworld) for providing high-quality interactive environments used in this project.
