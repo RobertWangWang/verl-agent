@@ -10,6 +10,9 @@ from collections import defaultdict
 from verl import DataProto
 import uuid
 
+# ---------------------------------------------------------- #
+# --------------- General Functions of GiGPO --------------- #
+# ---------------------------------------------------------- #
 def to_hashable(x):
     if isinstance(x, (int, float, str, bool)):
         return x
@@ -60,52 +63,6 @@ def compute_step_discounted_returns(batch: DataProto, gamma: float):
     
     all_returns = torch.tensor(all_returns, dtype=torch.float32, device=batch.batch['input_ids'].device)
     return all_returns
-
-
-def episode_group_reward(token_level_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
-                                   index: np.array,
-                                   epsilon: float = 1e-6):
-    """
-    Compute episode-group advantage for GiGPO, operating only on Outcome reward 
-    (with only one scalar reward for each episode).
-    Args:
-        token_level_rewards: `(torch.Tensor)`
-            shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
-            shape: (bs, response_length)
-    
-    Returns:
-        advantages: `(torch.Tensor)`
-            shape: (bs, response_length)
-        Returns: `(torch.Tensor)`
-            shape: (bs, response_length)
-    """
-    response_length = token_level_rewards.shape[-1]
-    scores = token_level_rewards.sum(dim=-1)
-
-    id2score = defaultdict(list)
-    id2mean = {}
-    id2std = {}
-
-    with torch.no_grad():
-        bsz = scores.shape[0]
-        for i in range(bsz):
-            id2score[index[i]].append(scores[i])
-        for idx in id2score:
-            if len(id2score[idx]) == 1:
-                id2mean[idx] = torch.tensor(0.0)
-                id2std[idx] = torch.tensor(1.0)
-            elif len(id2score[idx]) > 1:
-                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
-                id2std[idx] = torch.std(torch.tensor([id2score[idx]]))
-            else:
-                raise ValueError(f"no score in prompt index: {idx}")
-        for i in range(bsz):
-            scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-        scores = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
-
-    return scores
 
 
 def build_step_group(anchor_obs: np.array, index: np.array):
@@ -162,14 +119,98 @@ def build_step_group(anchor_obs: np.array, index: np.array):
     print(f"Avg length of step_group_uids: {np.mean(group_length)}, Max length of step_group_uids: {np.max(group_length)}, Min length of step_group_uids: {np.min(group_length)}")
     return step_group_uids
 
-    
 
-def step_group_reward(step_rewards: torch.Tensor,
+def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
+                                   step_rewards: torch.Tensor,
+                                   eos_mask: torch.Tensor,
+                                   anchor_obs: np.array,
+                                   index: np.array,
+                                   epsilon: float = 1e-6,
+                                   step_advantage_w: float = 1.0,
+                                   mode: str = "mean_std_norm"
+                                   ):
+    
+    # Compute episode-level group reward
+    if mode == "mean_std_norm":
+        episode_advantages = episode_norm_reward(token_level_rewards, eos_mask, index, epsilon)
+    elif mode == "leave_one_out":
+        episode_advantages = episode_loo_reward(token_level_rewards, eos_mask, index, epsilon)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+    
+    # Compute step_group_uids
+    step_group_uids = build_step_group(anchor_obs, index)
+
+    # Compute step-level group reward
+    if mode == "mean_std_norm":
+        step_advantages = step_norm_reward(step_rewards, eos_mask, step_group_uids, epsilon)
+    elif mode == "leave_one_out":
+        step_advantages = step_loo_reward(step_rewards, eos_mask, step_group_uids, epsilon)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
+
+    scores = episode_advantages + step_advantage_w * step_advantages
+    return scores, scores
+
+
+
+# ---------------------------------------------------------------------- #
+# ------------- Mean-Std Normalization Advatange Estimate -------------- #
+# ---------------------------------------------------------------------- #
+
+def episode_norm_reward(token_level_rewards: torch.Tensor,
+                                   eos_mask: torch.Tensor,
+                                   index: np.array,
+                                   epsilon: float = 1e-6):
+    """
+    Compute episode-level advantage using mean-std normalization for GiGPO.
+    (with only one scalar reward for each episode).
+    Args:
+        token_level_rewards: `(torch.Tensor)`
+            shape: (bs, response_length)
+        eos_mask: `(torch.Tensor)`
+            shape: (bs, response_length)
+    
+    Returns:
+        advantages: `(torch.Tensor)`
+            shape: (bs, response_length)
+        Returns: `(torch.Tensor)`
+            shape: (bs, response_length)
+    """
+    response_length = token_level_rewards.shape[-1]
+    scores = token_level_rewards.sum(dim=-1)
+
+    id2score = defaultdict(list)
+    id2mean = {}
+    id2std = {}
+
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = torch.tensor(0.0)
+                id2std[idx] = torch.tensor(1.0)
+            elif len(id2score[idx]) > 1:
+                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
+                id2std[idx] = torch.std(torch.tensor([id2score[idx]]))
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
+        episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+
+    return episode_advantages
+
+
+
+def step_norm_reward(step_rewards: torch.Tensor,
                       eos_mask: torch.Tensor,
                       index: np.array,
                       epsilon: float = 1e-6):
     """
-    Compute step-group advantage for GiGPO, operating on step reward.
+    Compute step-level advantage using mean-std normalization for GiGPO.
     Args:
         step_rewards: `(torch.Tensor)`
             shape: (bs,)
@@ -183,7 +224,7 @@ def step_group_reward(step_rewards: torch.Tensor,
             shape: (bs, response_length)
     """
     response_length = eos_mask.shape[-1]
-    scores = step_rewards
+    scores = step_rewards.clone()
 
     id2score = defaultdict(list)
     id2mean = {}
@@ -207,28 +248,108 @@ def step_group_reward(step_rewards: torch.Tensor,
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
             scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-        scores = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
     
-    return scores
+    return step_advantages
 
 
-def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
-                                   step_rewards: torch.Tensor,
+# ------------------------------------------------------------------- #
+# ---------------- Leave-One-Out Advatange Estimate ----------------- #
+# ------------------------------------------------------------------- #
+
+def episode_loo_reward(token_level_rewards: torch.Tensor,
                                    eos_mask: torch.Tensor,
-                                   anchor_obs: np.array,
                                    index: np.array,
-                                   epsilon: float = 1e-6,
-                                   step_advantage_w: float = 0.8,
-                                   ):
+                                   epsilon: float = 1e-6):
+    """
+    Compute episode-level advantage using Leave-One-Out (LOO) method for GiGPO.
+    Args:
+        token_level_rewards: `(torch.Tensor)`
+            shape: (bs, response_length)
+        eos_mask: `(torch.Tensor)`
+            shape: (bs, response_length)
+
+    Returns:
+        advantages: `(torch.Tensor)`
+            shape: (bs, response_length)
+        Returns: `(torch.Tensor)`
+            shape: (bs, response_length)
+    """
+    response_length = token_level_rewards.shape[-1]
+    scores = token_level_rewards.sum(dim=-1)
+
+    id2score = defaultdict(list)
+    id2mean = {}
+
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = torch.tensor(0.0)
+            elif len(id2score[idx]) > 1:
+                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            response_num = len(id2score[index[i]])
+            if response_num > 1:
+                scores[i] = scores[i] * response_num / (response_num -
+                                                        1) - id2mean[index[i]] * response_num / (response_num - 1)
+        episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+
+    return episode_advantages
+
+
+
+def step_loo_reward(step_rewards: torch.Tensor,
+                    eos_mask: torch.Tensor,
+                    index: np.array,
+                    epsilon: float = 1e-6):
+    """
+    Compute step-level advantage using Leave-One-Out (LOO) method for GiGPO.
     
-    # Compute episode_group_reward
-    episode_advantages = episode_group_reward(token_level_rewards, eos_mask, index, epsilon)
+    Args:
+        step_rewards: `(torch.Tensor)`
+            Step-specific rewards, shape: (bs,)
+        eos_mask: `(torch.Tensor)`
+            Mask indicating valid token positions, shape: (bs, response_length)
+        index: `np.array`
+            Step group identifiers for each sample (e.g., from build_step_group)
+        epsilon: `float`
+            Small value for numerical stability (unused in LOO but kept for interface consistency)
+    
+    Returns:
+        advantages: `(torch.Tensor)`
+            Computed advantages, shape: (bs, response_length)
+        returns: `(torch.Tensor)`
+            Same as advantages for compatibility, shape: (bs, response_length)
+    """
+    response_length = eos_mask.shape[-1]
+    scores = step_rewards.clone()
 
-    # Compute step_group_uids
-    step_group_uids = build_step_group(anchor_obs, index)
+    # Group samples by their step group index
+    id2score = defaultdict(list)
+    id2mean = {}
 
-    # Compute step_group_reward
-    step_advantages = step_group_reward(step_rewards, eos_mask, step_group_uids, epsilon)
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = torch.tensor(0.0)
+            elif len(id2score[idx]) > 1:
+                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            response_num = len(id2score[index[i]])
+            if response_num > 1:
+                scores[i] = scores[i] * response_num / (response_num - 1) - id2mean[index[i]] * response_num / (response_num - 1)
+            else:
+                scores[i] = torch.tensor(0.0)
+        step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
 
-    scores = episode_advantages + step_advantage_w * step_advantages
-    return scores, scores
+    return step_advantages
