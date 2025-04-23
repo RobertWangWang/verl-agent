@@ -41,7 +41,7 @@ def _worker(remote, seed, env_kwargs):
                 obs, reward, done, info = env.step(action)
                 info = dict(info or {})  # make a *copy* so we can mutate safely
                 info['available_actions'] = env.get_available_actions()
-                assert reward <= 1.0, f"Reward {reward} is greater than 1.0"
+                info['task_score'] = reward
 
                 # Redefine reward. We only use rule-based reward - win for 10, lose for 0.
                 if done and reward == 1.0:

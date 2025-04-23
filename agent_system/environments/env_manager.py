@@ -122,7 +122,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             if batch_item['active_masks']:
                 info = total_infos[batch_idx][i]
                 won_value = float(info['won'])
-                success['main'].append(won_value)
+                success['success_rate'].append(won_value)
                 
                 # Process game file if it exists
                 gamefile = info.get("extra.gamefile")
@@ -142,7 +142,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         
         for task in tasks:
             if task in gamefile:
-                success[task].append(won_value)
+                success[f"{task}_success_rate"].append(won_value)
                 break
 
 
@@ -428,11 +428,21 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                         current_observation=text_obs[i],
                         available_actions=reformatted_available_actions
                     )
-                self.max_obs_length = len(obs) if len(obs) > self.max_obs_length else self.max_obs_length
 
             postprocess_text_obs.append(obs)
 
         return postprocess_text_obs
+
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                won_value = float(info['won'])
+                score_value = float(info['task_score'])
+                success['success_rate'].append(won_value)
+                success['webshop_task_score (not success_rate)'].append(score_value)
+                return
 
 class AppWorldEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, env_name):

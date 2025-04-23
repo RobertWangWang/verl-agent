@@ -253,7 +253,7 @@ class WebAgentTextEnv(gym.Env):
         if self._seed is not None:
             random.seed(self._seed)
             np.random.seed(self._seed)
-            torch.manual_seed(self._seed)  # 可选，视是否用 torch 随机操作
+            torch.manual_seed(self._seed)
         session_int = None
         if session is not None:
             self.session = str(session)

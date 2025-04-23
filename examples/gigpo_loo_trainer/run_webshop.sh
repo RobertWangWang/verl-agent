@@ -63,7 +63,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.experiment_name="${experiment_name}" \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=-1 \
+    trainer.save_freq=10 \
     trainer.test_freq=10 \
     trainer.total_epochs=400 \
     trainer.val_before_train=True $@
