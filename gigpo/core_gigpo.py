@@ -120,6 +120,7 @@ def build_step_group(anchor_obs: np.array, index: np.array):
     return step_group_uids
 
 
+
 def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    step_rewards: torch.Tensor,
                                    eos_mask: torch.Tensor,
@@ -127,41 +128,38 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    index: np.array,
                                    epsilon: float = 1e-6,
                                    step_advantage_w: float = 1.0,
-                                   mode: str = "mean_std_norm"
+                                   mode: str = "mean_norm"
                                    ):
     
-    # Compute episode-level group reward
     if mode == "mean_std_norm":
-        episode_advantages = episode_norm_reward(token_level_rewards, eos_mask, index, epsilon)
-    elif mode == "leave_one_out":
-        episode_advantages = episode_loo_reward(token_level_rewards, eos_mask, index, epsilon)
+        remove_std = False
+    elif mode == "mean_norm":
+        remove_std = True
     else:
         raise ValueError(f"Unknown mode: {mode}")
+    
+    # Compute episode-level group reward
+    episode_advantages = episode_norm_reward(token_level_rewards, eos_mask, index, epsilon, remove_std)
     
     # Compute step_group_uids
     step_group_uids = build_step_group(anchor_obs, index)
 
     # Compute step-level group reward
-    if mode == "mean_std_norm":
-        step_advantages = step_norm_reward(step_rewards, eos_mask, step_group_uids, epsilon)
-    elif mode == "leave_one_out":
-        step_advantages = step_loo_reward(step_rewards, eos_mask, step_group_uids, epsilon)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
+    step_advantages = step_norm_reward(step_rewards, eos_mask, step_group_uids, epsilon, remove_std)
 
     scores = episode_advantages + step_advantage_w * step_advantages
     return scores, scores
 
-
-
 # ---------------------------------------------------------------------- #
-# ------------- Mean-Std Normalization Advatange Estimate -------------- #
+# ------------- Mean-(Std) Normalization Advatange Estimate -------------- #
 # ---------------------------------------------------------------------- #
 
 def episode_norm_reward(token_level_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
-                                   index: np.array,
-                                   epsilon: float = 1e-6):
+                        eos_mask: torch.Tensor,
+                        index: np.array,
+                        epsilon: float = 1e-6,
+                        remove_std: bool = True,
+                        ):
     """
     Compute episode-level advantage using mean-std normalization for GiGPO.
     (with only one scalar reward for each episode).
@@ -198,7 +196,10 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
             else:
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
-            scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
+            if remove_std:
+                scores[i] = scores[i] - id2mean[index[i]]
+            else:
+                scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
         episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
 
     return episode_advantages
@@ -208,7 +209,9 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
 def step_norm_reward(step_rewards: torch.Tensor,
                       eos_mask: torch.Tensor,
                       index: np.array,
-                      epsilon: float = 1e-6):
+                      epsilon: float = 1e-6,
+                      remove_std: bool = True,
+                      ):
     """
     Compute step-level advantage using mean-std normalization for GiGPO.
     Args:
@@ -247,7 +250,10 @@ def step_norm_reward(step_rewards: torch.Tensor,
                 print(f"len(id2score[idx]): {len(id2score[idx])}")
                 raise ValueError(f"no score in prompt index: {idx}")
         for i in range(bsz):
-            scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
+            if remove_std:
+                scores[i] = scores[i] - id2mean[index[i]]
+            else:
+                scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
         step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
     
     return step_advantages

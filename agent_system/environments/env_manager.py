@@ -38,6 +38,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             self.buffers.clear()
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = []
+        self.pre_text_obs = text_obs
         self.extract_task(text_obs)
 
         full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
@@ -46,7 +47,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
     def step(self, text_actions: List[str]):
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
-        self.save_to_history_buffer(actions, text_obs)
+        self.save_to_history_buffer(self.pre_text_obs, actions)
+        self.pre_text_obs = text_obs
 
         full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
         if infos[0].get("extra.gamefile") is None:
@@ -72,7 +74,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 raise ValueError("Task description not found in text observation.")
         
 
-    def build_text_obs(self, text_obs: List[str], admissible_actions: List[List[str]], init: bool = False, history_length: int = 5) -> List[str]:
+    def build_text_obs(self, text_obs: List[str], admissible_actions: List[List[str]], init: bool = False, history_length: int = 2) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
@@ -95,8 +97,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 for j, record in enumerate(recent_history):
                     step_number = start_index + j + 1
                     action = record["action"]
-                    feedback = record["text_obs"]
-                    action_history += f"[Action {step_number}: '{action}', Feedback {step_number}: '{feedback}']"
+                    env_obs = record["text_obs"]
+                    action_history += f"\n[Observation {step_number}: '{env_obs}', Action {step_number}: '{action}']"
                 obs = ALFWORLD_TEMPLATE.format(
                     task_description=self.tasks[i],
                     step_count=len(self.buffers[i]),
@@ -111,9 +113,9 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 
         return postprocess_text_obs
 
-    def save_to_history_buffer(self, actions, text_obs):
+    def save_to_history_buffer(self, text_obs, actions):
         for i in range(len(actions)):
-            self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
+            self.buffers[i].append({'text_obs': text_obs[i], 'action': actions[i]})
 
     def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
         # Find the last entry with active masks
@@ -458,6 +460,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
             self.buffers.clear()
         self.buffers = [[] for _ in range(len(text_obs))]
         self.tasks = text_obs.copy()
+        self.pre_text_obs = text_obs
 
         full_text_obs = self.build_text_obs(text_obs, init=True)
         return {'text': full_text_obs, 'image': None, 'anchor': text_obs}, infos
@@ -467,7 +470,8 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
 
         text_obs, rewards, dones, infos = self.envs.step(actions)
 
-        self.save_to_history_buffer(actions, text_obs)
+        self.save_to_history_buffer(self.pre_text_obs, actions)
+        self.pre_text_obs = text_obs
 
         full_text_obs = self.build_text_obs(text_obs)
 
@@ -507,8 +511,8 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                 for j, record in enumerate(recent_history):
                     step_number = start_index + j + 1
                     action = record["action"]
-                    feedback = record["text_obs"]
-                    action_history += f"\n[\nCode {step_number}: '{action}'\nFeedback {step_number}: '{feedback}'\n]"
+                    env_obs = record["text_obs"]
+                    action_history += f"\n[Observation {step_number}: '{env_obs}', Code {step_number}: '{action}']"
 
                 obs = APPWORLD_TEMPLATE.format(
                         supervisor_first_name=self.supervisors[i]['first_name'],
@@ -524,9 +528,9 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                 postprocess_text_obs.append(obs)
         return postprocess_text_obs
 
-    def save_to_history_buffer(self, actions, text_obs):
+    def save_to_history_buffer(self, text_obs, actions):
         for i in range(len(actions)):
-            self.buffers[i].append({'action': actions[i], 'text_obs': text_obs[i]})
+            self.buffers[i].append({'text_obs': text_obs[i], 'action': actions[i]})
 
 
 def make_envs(config):

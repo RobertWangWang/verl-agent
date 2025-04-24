@@ -184,7 +184,7 @@ algorithm:
     target_kl: 0.1
   gigpo:
     step_advantage_w: 1.0
-    mode: "mean_std_norm" # "mean_std_norm" or "leave_one_out"
+    mode: "mean_norm" # "mean_norm" or "mean_std_norm"
   filter_groups: # DAPO from https://arxiv.org/abs/2503.14476
     enable: False
     max_num_gen_batches: 10
