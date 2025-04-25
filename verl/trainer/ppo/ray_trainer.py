@@ -200,7 +200,7 @@ def compute_response_mask(data: DataProto):
     return attention_mask[:, -response_length:]
 
 
-def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_advantage_w=0.8, num_repeat=1):
+def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_advantage_w=1.0, gigpo_mode="mean_std_norm", num_repeat=1):
     # Back-compatible with trainers that do not compute response mask in fit
     if "response_mask" not in data.batch.keys():
         data.batch['response_mask'] = compute_response_mask(data)
@@ -251,6 +251,7 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, step_a
             anchor_obs=data.non_tensor_batch['anchor_obs'],
             index=data.non_tensor_batch['uid'],
             step_advantage_w=step_advantage_w,
+            mode=gigpo_mode,
             )
         data.batch['advantages'] = advantages
         data.batch['returns'] = returns
@@ -996,6 +997,7 @@ class RayPPOTrainer(object):
                                                   lam=self.config.algorithm.lam,
                                                   num_repeat=self.config.actor_rollout_ref.rollout.n,
                                                   step_advantage_w=self.config.algorithm.gigpo.step_advantage_w,
+                                                  gigpo_mode=self.config.algorithm.gigpo.mode,
                                                   )
 
                     # update critic

@@ -6,11 +6,14 @@ export CUDA_VISIBLE_DEVICES=0,1
 train_data_size=16
 val_data_size=128
 group_size=5
+gamma=0.95
 
 clip_ratio_low=0.2
 clip_ratio_high=0.28
 enable_filter_groups=True
-max_num_gen_batches=10
+max_num_gen_batches=5
+
+experiment_name="dynamicgigpo_num${max_num_gen_batches}_bs${train_data_size}_g${group_size}_gamma${gamma}_his2"
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -55,7 +58,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
+    algorithm.gamma=$gamma \
     algorithm.gigpo.step_advantage_w=1.0 \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
@@ -65,7 +68,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_webshop' \
-    trainer.experiment_name='qwen_2_5_1_5b_dynamicgigpo_n5_w1_gamma0_95_wo_history' \
+    trainer.experiment_name="${experiment_name}" \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \

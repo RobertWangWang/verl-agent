@@ -111,7 +111,7 @@ class EnvironmentManagerBase:
         for bs in range(batch_size):
             self._process_batch(bs, total_batch_list, total_infos, success)
         
-        assert len(success['main']) == batch_size
+        assert len(success['success_rate']) == batch_size
 
         return {key: np.array(value) for key, value in success.items()}
     
@@ -121,7 +121,7 @@ class EnvironmentManagerBase:
             if batch_item['active_masks']:
                 info = total_infos[batch_idx][i]
                 won_value = float(info['won'])
-                success['main'].append(won_value)
+                success['success_rate'].append(won_value)
                 return
             
     def save_image(self, image, step):

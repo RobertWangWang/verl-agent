@@ -6,6 +6,9 @@ export CUDA_VISIBLE_DEVICES=0,1
 train_data_size=16
 val_data_size=128
 group_size=8
+gamma=0.95
+
+experiment_name="gigpo_bs${train_data_size}_g${group_size}_gamma${gamma}_his2"
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -19,7 +22,7 @@ python3 -m verl.trainer.main_ppo \
     data.train_batch_size=$train_data_size \
     data.val_batch_size=$val_data_size \
     data.max_prompt_length=2048 \
-    data.max_response_length=2048 \
+    data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
@@ -48,7 +51,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
+    algorithm.gamma=$gamma \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=alfworld/AlfredTWEnv \
     env.max_steps=50 \
@@ -56,10 +59,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_AlfredTWEnv' \
-    trainer.experiment_name='qwen_2_5_1_5b_gigpo_n8_w1_gamma0_95' \
+    trainer.experiment_name="${experiment_name}" \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
     trainer.test_freq=10 \
-    trainer.total_epochs=200 \
+    trainer.total_epochs=400 \
     trainer.val_before_train=True $@

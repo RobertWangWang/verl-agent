@@ -219,7 +219,7 @@ class TrajectoryCollector:
 
         success_rate = {}
         for key, value in success.items():
-            success_rate[f"{key}_success_rate"] = np.mean(value)
+            success_rate[key] = np.mean(value)
         
         effective_batch = []
         for bs in range(batch_size):
