@@ -3,19 +3,25 @@ ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 export CUDA_VISIBLE_DEVICES=0,1
 
+train_data_size=16
+val_data_size=128
+group_size=8
+
+experiment_name="grpo_bs${train_data_size}_g${group_size}_gamma${gamma}_his2"
+
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
-    --train_data_size 128 \
-    --val_data_size 256
+    --train_data_size $train_data_size \
+    --val_data_size $val_data_size
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
     data.val_files=$HOME/data/verl-agent/text/test.parquet \
-    data.train_batch_size=16 \
-    data.val_batch_size=128 \
+    data.train_batch_size=$train_data_size \
+    data.val_batch_size=$val_data_size \
     data.max_prompt_length=2048 \
-    data.max_response_length=2048 \
+    data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation='error' \
     data.return_raw_chat=True \
@@ -46,14 +52,14 @@ python3 -m verl.trainer.main_ppo \
     algorithm.use_kl_in_reward=False \
     env.env_name=alfworld/AlfredTWEnv \
     env.max_steps=50 \
-    env.rollout.n=8 \
+    env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_AlfredTWEnv' \
-    trainer.experiment_name='qwen_2_5_1_5b_grpo' \
+    trainer.experiment_name="${experiment_name}" \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
     trainer.test_freq=10 \
-    trainer.total_epochs=200 \
+    trainer.total_epochs=400 \
     trainer.val_before_train=True $@

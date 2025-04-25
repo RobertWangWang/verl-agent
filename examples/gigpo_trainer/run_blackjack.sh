@@ -1,11 +1,14 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=4,5
+export CUDA_VISIBLE_DEVICES=2,3
 
 train_data_size=32
 val_data_size=128
 group_size=8
+gamma=0.95
+
+experiment_name="new_gigpo_bs${train_data_size}_g${group_size}_gamma${gamma}"
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
@@ -49,7 +52,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
+    algorithm.gamma=$gamma \
     algorithm.gigpo.step_advantage_w=1.0 \
     env.env_name=gym_cards/Blackjack-v0 \
     env.max_steps=15 \
@@ -57,7 +60,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_blackjack' \
-    trainer.experiment_name='qwen_2_5_vl_3b_gigpo_n8_w1_gamma0_95' \
+    trainer.experiment_name="${experiment_name}" \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=100 \
