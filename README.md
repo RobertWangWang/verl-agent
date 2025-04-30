@@ -30,6 +30,8 @@
 ```bash
 conda create -n verl-agent python==3.12 -y
 conda activate verl-agent
+
+pip3 install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 # Install FlashAttention
 pip3 install flash-attn --no-build-isolation
 

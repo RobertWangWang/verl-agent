@@ -50,7 +50,7 @@ pip3 install stable-baselines3==2.6.0
 ### 4. WebShop
 WebShop requires Python 3.9, so begin by creating a new `verl-agent-webshop` environment
 ```bash
-conda create -n verl-agent-webshop python==3.9 -y
+conda create -n verl-agent-webshop python==3.9.18 -y
 conda activate verl-agent-webshop
 ```
 
@@ -72,6 +72,7 @@ python run_web_agent_text_env.py
 After WebShop is installed, return to the root directory of the repository and install the verl package in `verl-agent`:
 ```bash
 cd repo_root/
+pip3 install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 pip3 install flash-attn --no-build-isolation
 pip3 install -e .
 pip3 install vllm==0.8.2
