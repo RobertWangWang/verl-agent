@@ -8,18 +8,11 @@ from openai import OpenAI
 
 def build_env(env_name, env_num=1):
     group_n = 1
-    if env_name == "alfworld":
-        # Test AlfWorldEnvironmentManager
-        from agent_system.environments.env_package.alfworld import alfworld_projection
-        from agent_system.environments.env_package.alfworld import build_alfworld_envs
-        alf_config_path = os.path.join(os.path.dirname(__file__), '../../agent_system/environments/env_package/alfworld/configs/config_tw.yaml')
-        envs = build_alfworld_envs(alf_config_path, seed=1, env_num=env_num, group_n=group_n, is_train=False)
-        env_manager = AlfWorldEnvironmentManager(envs, alfworld_projection, 'alfworld/AlfredThorEnv')
-    elif env_name == "webshop":
+    if env_name == "webshop":
         # Test WebshopEnvironmentManager
         from agent_system.environments.env_package.webshop import webshop_projection
         from agent_system.environments.env_package.webshop import build_webshop_envs
-        envs = build_webshop_envs(seed=1, env_num=env_num, group_n=group_n)
+        envs = build_webshop_envs(seed=1, env_num=env_num, group_n=group_n, is_train=False)
         env_manager = WebshopEnvironmentManager(envs, webshop_projection, 'webshop')
     else:
         raise ValueError(f"Unsupported environment name: {env_name}")
