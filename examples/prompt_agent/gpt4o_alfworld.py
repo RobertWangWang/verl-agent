@@ -94,7 +94,7 @@ if __name__ == "__main__":
         task_total_cnt = defaultdict(int)
 
         for step_idx in range(max_steps):
-            logging.info(f"Step {step_idx}")
+            logging.info(f"Step {step_idx}; Dones ({np.array(env_dones).sum().item()}/{env_num}); SR {overall_success_this_round.mean().item()}")
 
             # --- Assemble actions ---
             actions = []

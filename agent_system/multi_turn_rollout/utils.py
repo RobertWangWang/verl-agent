@@ -78,7 +78,6 @@ def adjust_batch(config, data: DataProto) -> DataProto:
     bs = len(data)
     if bs % size_divisor != 0:
         remainder = bs % size_divisor
-        print(f"Current batch size: {bs} cannot be divided by {size_divisor}, randomly deleting {remainder} samples")
         
         # Generate indices to remove, rather than indices to keep
         remove_indices = np.random.choice(bs, remainder, replace=False)

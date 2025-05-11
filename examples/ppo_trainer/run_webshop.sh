@@ -5,8 +5,6 @@ export VLLM_ATTENTION_BACKEND=XFORMERS
 train_data_size=128 # match GRPO and GiGPO configuration (16 × 8)
 val_data_size=128
 
-experiment_name="ppo_bs${train_data_size}"
-
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
     --train_data_size $train_data_size \
@@ -51,19 +49,21 @@ python3 -m verl.trainer.main_ppo \
     critic.model.use_remove_padding=True \
     critic.model.path=Qwen/Qwen2.5-1.5B-Instruct \
     critic.model.enable_gradient_checkpointing=True \
-    critic.ppo_micro_batch_size_per_gpu=8 \
+    critic.ppo_micro_batch_size_per_gpu=4 \
     critic.model.fsdp_config.param_offload=False \
     critic.model.fsdp_config.optimizer_offload=False \
     algorithm.use_kl_in_reward=False \
     env.env_name=Webshop \
+    env.seed=0 \
     env.max_steps=15 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
     trainer.project_name='verl_webshop' \
-    trainer.experiment_name="${experiment_name}" \
+    trainer.experiment_name='ppo_qwen2.5_1.5b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=5 \
-    trainer.total_epochs=160 \
+    trainer.total_epochs=150 \
     trainer.val_before_train=True $@
+
