@@ -40,7 +40,7 @@
 
 - **Diverse RL Algorithms**
 
-  `verl-agent` includes implementations of various RL algorithms, such as GiGPO, GRPO, PPO, DAPO, and GiGPO, including variants with dynamic sampling and clip-higher.
+  `verl-agent` includes implementations of various RL algorithms, such as [GiGPO](https://github.com/langfengQ/verl-agent), [GRPO](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), [DAPO](https://arxiv.org/abs/2503.14476), and their variants with dynamic sampling and clip-higher.
 
 
 - **Vision-Language Agent Support**
@@ -80,7 +80,7 @@ We provide out-of-the-box scripts in the ["examples/"](examples/) directory for 
 
 Here are some examples:
 ### 1. GiGPO
-GiGPO is our novel algorithm designed to support fine-grained credit assignment in long-horizon LLM agent training. It introduces a two-level grouping mechanism:
+[GiGPO](https://github.com/langfengQ/verl-agent) is our novel algorithm designed to support fine-grained credit assignment in long-horizon LLM agent training. It introduces a two-level grouping mechanism:
 - Episode-level groups capture overall task success via total returns (like GRPO).
 - Step-level groups use shared anchor states across trajectories to compute relative advantages for individual actions.
 
@@ -125,13 +125,13 @@ bash examples/dapo_trainer/run_webshop.sh # WebShop
 ### 5. GiGPO (dynamic)
 GiGPO uses dynamic sampling and clip-higher from DAPO
 ```bash
-bash examples/gigpo_trainer/run_alfworld.sh # ALFWorld
+bash examples/gigpo_dynamic_trainer/run_alfworld.sh # ALFWorld
 ```
 ```bash
-bash examples/gigpo_trainer/run_webshop.sh # WebShop
+bash examples/gigpo_dynamic_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/gigpo_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/gigpo_dynamic_trainer/run_sokoban_visual.sh # Sokoban
 ```
 ## Prompt-based Agent with GPT-4o
 We also provide a prompt-based GPT-4o agent.
