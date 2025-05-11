@@ -1,4 +1,4 @@
-<h1 style="text-align: center;">verl-agent</h1>
+<h1 align="center">verl-agent</h1>
 
 <p align="center"><strong>@ Nanyang Technological University</strong></p>
 
