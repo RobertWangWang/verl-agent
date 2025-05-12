@@ -1,8 +1,8 @@
 <h1 align="center">verl-agent</h1>
 
-`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents** via reinforcement learning. `verl-agent` provides a **diverse set of RL algorithms** and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
+`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training ***large language model (LLM) agents*** via reinforcement learning. `verl-agent` provides a ***diverse set of RL algorithms*** and a ***rich suite of agent environments***, enabling the development of reasoning agents in both visual and text-based tasks.
 
-Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step independently and is therefore highly scalable for **very long-horizon, multi-turn RL training** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
+Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step independently and is therefore highly scalable for ***very long-horizon, multi-turn RL training*** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
 
 # Table of Contents
 
@@ -88,7 +88,8 @@ Details for installing each environment are provided in the [Environment Setup G
 
 `verl-agent` supports the following environments: **ALFWorld**, **WebShop**, **Gym Cards**, **Sokoban**, and **APPWorld** (experimental). -->
 
-> We strongly recommend installing **each environment in its own dedicated conda environment** to avoid potential package version conflicts.
+> ⚠️ **Important:** 
+To run an agent in any of these environments, you must first install and configure the corresponding environment. We strongly recommend installing ***each environment in its own dedicated conda environment*** to avoid potential package version conflicts.
 
 ### 1. ALFWorld
 Install with pip:
