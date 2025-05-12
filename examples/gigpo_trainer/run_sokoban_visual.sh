@@ -1,14 +1,11 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=2,3
 
 train_data_size=32
 val_data_size=128
 group_size=8
-gamma=0.95
-
-experiment_name="gigpo_bs${train_data_size}_g${group_size}_gamma${gamma}"
+mode="mean_norm" # "mean_norm" or "mean_std_norm"
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'visual' \
@@ -52,19 +49,21 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=$gamma \
+    algorithm.gamma=0.95 \
     algorithm.gigpo.step_advantage_w=1.0 \
+    algorithm.gigpo.mode=$mode \
     env.env_name=Sokoban \
+    env.seed=0 \
     env.max_steps=15 \
     env.rollout.n=$group_size \
     env.sokoban.mode='rgb_array' \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban' \
-    trainer.experiment_name="${experiment_name}" \
+    trainer.project_name='verl_agent_sokoban' \
+    trainer.experiment_name='gigpo_qwen2.5_vl_3b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=-1 \
     trainer.test_freq=10 \
-    trainer.total_epochs=500 \
+    trainer.total_epochs=300 \
     trainer.val_before_train=True $@

@@ -1,11 +1,10 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=0,1
 
 train_data_size=16
 val_data_size=128
-group_size=5
+group_size=8
 
 clip_ratio_low=0.2
 clip_ratio_high=0.28
@@ -58,15 +57,16 @@ python3 -m verl.trainer.main_ppo \
     algorithm.filter_groups.enable=${enable_filter_groups} \
     algorithm.filter_groups.max_num_gen_batches=${max_num_gen_batches} \
     env.env_name=Webshop \
+    env.seed=0 \
     env.max_steps=15 \
     env.rollout.n=${group_size} \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_webshop' \
-    trainer.experiment_name='qwen_2_5_1_5b_dapo_n5_wo_history' \
+    trainer.project_name='verl_agent_webshop' \
+    trainer.experiment_name='dapo_qwen2.5_1.5b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=5 \
-    trainer.total_epochs=400 \
+    trainer.total_epochs=150 \
     trainer.val_before_train=True $@

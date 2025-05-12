@@ -1,13 +1,10 @@
 set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
-export CUDA_VISIBLE_DEVICES=0,1
 
 train_data_size=16
 val_data_size=128
-group_size=5
-
-experiment_name="grpo_bs${train_data_size}_g${group_size}_his2_62"
+group_size=8
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -51,15 +48,16 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
     env.env_name=Webshop \
+    env.seed=0 \
     env.max_steps=15 \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_webshop' \
-    trainer.experiment_name="${experiment_name}" \
+    trainer.project_name='verl_agent_webshop' \
+    trainer.experiment_name='grpo_qwen2.5_1.5b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=10 \
-    trainer.total_epochs=400 \
+    trainer.test_freq=5 \
+    trainer.total_epochs=150 \
     trainer.val_before_train=True $@

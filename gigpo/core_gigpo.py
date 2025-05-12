@@ -6,7 +6,7 @@ implement GiGPO
 
 import numpy as np
 import torch
-from collections import defaultdict
+from collections import defaultdict, Counter
 from verl import DataProto
 import uuid
 
@@ -65,7 +65,7 @@ def compute_step_discounted_returns(batch: DataProto, gamma: float):
     return all_returns
 
 
-def build_step_group(anchor_obs: np.array, index: np.array):
+def build_step_group(anchor_obs: np.array, index: np.array, summarize: bool = False):
     """
     Group observations by index and then cluster identical observations within each index group.
     Assigns a unique step_group_uid (UUID) to each cluster.
@@ -76,6 +76,8 @@ def build_step_group(anchor_obs: np.array, index: np.array):
         Array of observation strings
     index : np.array
         Array of corresponding indices for each observation
+    summarize : bool
+        Whether to summarize the group sizes (default: True)
     
     Returns:
     --------
@@ -88,8 +90,7 @@ def build_step_group(anchor_obs: np.array, index: np.array):
     # Get unique indices
     unique_indices = np.unique(index)
 
-    group_length = []
-    
+    group_size = []
     # Process each unique index
     for idx in unique_indices:
         # Get all observations for this index using np.where
@@ -107,7 +108,7 @@ def build_step_group(anchor_obs: np.array, index: np.array):
             uid = str(uuid.uuid4())
             
             # Assign the same step_group_uid to all elements in this cluster
-            group_length.append(len(original_indices))
+            group_size.append(len(original_indices))
             for original_idx in original_indices:
                 step_group_uids[original_idx] = uid
 
@@ -115,8 +116,10 @@ def build_step_group(anchor_obs: np.array, index: np.array):
     if None in step_group_uids or np.any(step_group_uids == None):
         missing_indices = np.where(step_group_uids == None)[0]
         raise ValueError(f"Failed to assign UIDs to all observations. Missing at indices: {missing_indices}")
-    
-    print(f"Avg length of step_group_uids: {np.mean(group_length)}, Max length of step_group_uids: {np.max(group_length)}, Min length of step_group_uids: {np.min(group_length)}")
+
+    if summarize:
+        summarize_group_size(group_size)
+    print(f"Avg size of step-level group: {np.mean(group_size)}")
     return step_group_uids
 
 
@@ -150,9 +153,6 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
     scores = episode_advantages + step_advantage_w * step_advantages
     return scores, scores
 
-# ---------------------------------------------------------------------- #
-# ------------- Mean-(Std) Normalization Advatange Estimate -------------- #
-# ---------------------------------------------------------------------- #
 
 def episode_norm_reward(token_level_rewards: torch.Tensor,
                         eos_mask: torch.Tensor,
@@ -259,103 +259,25 @@ def step_norm_reward(step_rewards: torch.Tensor,
     return step_advantages
 
 
-# ------------------------------------------------------------------- #
-# ---------------- Leave-One-Out Advatange Estimate ----------------- #
-# ------------------------------------------------------------------- #
-
-def episode_loo_reward(token_level_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
-                                   index: np.array,
-                                   epsilon: float = 1e-6):
+def summarize_group_size(group_size: list):
     """
-    Compute episode-level advantage using Leave-One-Out (LOO) method for GiGPO.
+    Summarize the dynamics of step-level group.
     Args:
-        token_level_rewards: `(torch.Tensor)`
-            shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
-            shape: (bs, response_length)
-
-    Returns:
-        advantages: `(torch.Tensor)`
-            shape: (bs, response_length)
-        Returns: `(torch.Tensor)`
-            shape: (bs, response_length)
+        group_size : List[int]
     """
-    response_length = token_level_rewards.shape[-1]
-    scores = token_level_rewards.sum(dim=-1)
+    counts = Counter(group_size)
+    total = sum(counts.values())
+    max_size = max(counts)
 
-    id2score = defaultdict(list)
-    id2mean = {}
+    summary = {}
+    for size in range(1, max_size + 1):
+        cnt = counts.get(size, 0)
+        prop = cnt / total if total > 0 else 0
+        summary[size] = (cnt, prop)
 
-    with torch.no_grad():
-        bsz = scores.shape[0]
-        for i in range(bsz):
-            id2score[index[i]].append(scores[i])
-        for idx in id2score:
-            if len(id2score[idx]) == 1:
-                id2mean[idx] = torch.tensor(0.0)
-            elif len(id2score[idx]) > 1:
-                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
-            else:
-                raise ValueError(f"no score in prompt index: {idx}")
-        for i in range(bsz):
-            response_num = len(id2score[index[i]])
-            if response_num > 1:
-                scores[i] = scores[i] * response_num / (response_num -
-                                                        1) - id2mean[index[i]] * response_num / (response_num - 1)
-        episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
-
-    return episode_advantages
-
-
-
-def step_loo_reward(step_rewards: torch.Tensor,
-                    eos_mask: torch.Tensor,
-                    index: np.array,
-                    epsilon: float = 1e-6):
-    """
-    Compute step-level advantage using Leave-One-Out (LOO) method for GiGPO.
-    
-    Args:
-        step_rewards: `(torch.Tensor)`
-            Step-specific rewards, shape: (bs,)
-        eos_mask: `(torch.Tensor)`
-            Mask indicating valid token positions, shape: (bs, response_length)
-        index: `np.array`
-            Step group identifiers for each sample (e.g., from build_step_group)
-        epsilon: `float`
-            Small value for numerical stability (unused in LOO but kept for interface consistency)
-    
-    Returns:
-        advantages: `(torch.Tensor)`
-            Computed advantages, shape: (bs, response_length)
-        returns: `(torch.Tensor)`
-            Same as advantages for compatibility, shape: (bs, response_length)
-    """
-    response_length = eos_mask.shape[-1]
-    scores = step_rewards.clone()
-
-    # Group samples by their step group index
-    id2score = defaultdict(list)
-    id2mean = {}
-
-    with torch.no_grad():
-        bsz = scores.shape[0]
-        for i in range(bsz):
-            id2score[index[i]].append(scores[i])
-        for idx in id2score:
-            if len(id2score[idx]) == 1:
-                id2mean[idx] = torch.tensor(0.0)
-            elif len(id2score[idx]) > 1:
-                id2mean[idx] = torch.mean(torch.tensor(id2score[idx]))
-            else:
-                raise ValueError(f"no score in prompt index: {idx}")
-        for i in range(bsz):
-            response_num = len(id2score[index[i]])
-            if response_num > 1:
-                scores[i] = scores[i] * response_num / (response_num - 1) - id2mean[index[i]] * response_num / (response_num - 1)
-            else:
-                scores[i] = torch.tensor(0.0)
-        step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
-
-    return step_advantages
+    print("Summary of step-level group sizes:")
+    print("Size | Count | Proportion")
+    print("-------------------------")
+    for size, (cnt, prop) in summary.items():
+        if prop:
+            print(f"{size:>4} | {cnt:>5} | {prop:>9.2%}")
