@@ -2,9 +2,9 @@ set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
-train_data_size=32
+train_data_size=16
 val_data_size=128
-group_size=5
+group_size=8
 mode="mean_norm" # "mean_norm" or "mean_std_norm"
 
 python3 -m examples.data_preprocess.prepare \
@@ -58,11 +58,11 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_numberLine' \
+    trainer.project_name='verl_agent_numberLine' \
     trainer.experiment_name='gigpo_qwen2_vl_2b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=5 \
-    trainer.total_epochs=50 \
+    trainer.total_epochs=20 \
     trainer.val_before_train=True $@

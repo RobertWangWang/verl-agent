@@ -85,7 +85,7 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_Appworld' \
+    trainer.project_name='verl_agent_appworld' \
     trainer.experiment_name='grpo_qwen2.5_7b' \
     trainer.n_gpus_per_node=8 \
     trainer.nnodes=1 \

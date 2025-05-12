@@ -58,11 +58,11 @@ python3 -m verl.trainer.main_ppo \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_blackjack' \
+    trainer.project_name='verl_agent_blackjack' \
     trainer.experiment_name='gigpo_qwen2.5_vl_3b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
     trainer.test_freq=10 \
-    trainer.total_epochs=400 \
+    trainer.total_epochs=200 \
     trainer.val_before_train=True $@

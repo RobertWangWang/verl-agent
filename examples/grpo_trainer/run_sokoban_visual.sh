@@ -55,7 +55,7 @@ python3 -m verl.trainer.main_ppo \
     env.sokoban.mode='rgb_array' \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_sokoban' \
+    trainer.project_name='verl_agent_sokoban' \
     trainer.experiment_name='grpo_qwen2.5_vl_3b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \

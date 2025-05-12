@@ -58,7 +58,7 @@ python3 -m verl.trainer.main_ppo \
     env.max_steps=50 \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_AlfredTWEnv' \
+    trainer.project_name='verl_agent_alfworld' \
     trainer.experiment_name='ppo_qwen2.5_1.5b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
