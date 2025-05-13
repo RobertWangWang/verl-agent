@@ -1,12 +1,13 @@
 <h1 align="center">verl-agent</h1>
 
-`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training ***large language model (LLM) agents*** via reinforcement learning. `verl-agent` provides a ***diverse set of RL algorithms*** and a ***rich suite of agent environments***, enabling the development of reasoning agents in both visual and text-based tasks.
+`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents via reinforcement learning (RL)**. `verl-agent` provides a **diverse set of RL algorithms** and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
 
-Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step independently and is therefore highly scalable for ***very long-horizon, multi-turn RL training*** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
+Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step independently and is therefore highly scalable for **very long-horizon, multi-turn RL training** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
 
 # Table of Contents
 
-- [Key Features](#key-features)  
+- [Key Features](#key-features)
+- [Results](#results)  
 - [Installation](#installation)  
   - [Install veRL](#install-verl)  
   - [Install Supported Environments](#install-supported-environments)  
@@ -53,16 +54,14 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 
   Beyond text-based agents, `verl-agent` also supports training vision-language agents. This enables multi-modal reasoning in environments where both visual perception and language understanding are required.
 
-# Performance
-
-
-| Algorithm | Task | Model | Success Rate (%) | Training Log | Model Checkpoint [Coming Soon] |
+# Results
+| Algorithm | Task | Model | Success Rate | Training Log | Model Checkpoint [Coming Soon] |
 |-|-|-|-|-|-|
-| GiGPO | ALFWorld | Qwen2.5-1.5B-Instruct | **86.1** | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://wandb.ai/langfeng-cs-nanyang-technological-university-singapore/verl_agent_alfworld/reports/Logs-of-GiGPO-on-ALFWorld--VmlldzoxMjczNjI3OQ) | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
-| GiGPO | WebShop| Qwen2.5-1.5B-Instruct | **67.4** | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://wandb.ai/langfeng-cs-nanyang-technological-university-singapore/verl_agent_webshop/reports/Logs-of-GiGPO-on-WebShop--VmlldzoxMjczNTc2OA)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
-| GiGPO | Sokoban [6x6]| Qwen2.5-VL-3B-Instruct | **81.0** | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://wandb.ai/langfeng-cs-nanyang-technological-university-singapore/verl_agent_sokoban/reports/Logs-of-GiGPO-on-Sokoban--VmlldzoxMjczNjIxOA)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
-| GiGPO | Numberline | Qwen2.5-VL-3B-Instruct | **100.0** | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://wandb.ai/langfeng-cs-nanyang-technological-university-singapore/verl_agent_numberline/reports/Logs-of-GiGPO-on-NumberLine--VmlldzoxMjczNjU4Ng)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
-| GiGPO | EZPoints | Qwen2.5-VL-3B-Instruct | **100.0** | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://wandb.ai/langfeng-cs-nanyang-technological-university-singapore/verl_agent_ezpoints/reports/Logs-of-GiGPO-on-EZPoints--VmlldzoxMjczNjM0MA)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO | ALFWorld | Qwen2.5-1.5B-Instruct | 86.1% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/78zz4sc9) | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO | WebShop| Qwen2.5-1.5B-Instruct | 67.4% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/zfnvpvxe)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO | Sokoban [6x6]| Qwen2.5-VL-3B-Instruct | 81.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/xm92tyea)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO | NumberLine | Qwen2.5-VL-3B-Instruct | 100.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/81qzsc3n)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO | EZPoints | Qwen2.5-VL-3B-Instruct | 100.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/k0y51zei)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 
 
 # Installation
@@ -211,7 +210,7 @@ Here are some examples:
 ### 1. GiGPO
 [GiGPO](https://github.com/langfengQ/verl-agent) is our novel algorithm designed to support fine-grained credit assignment in long-horizon LLM agent training. It introduces a two-level grouping mechanism:
 - Episode-level groups capture overall task success via total returns (like GRPO).
-- Step-level groups use shared anchor states across trajectories to compute relative advantages for individual actions.
+- Step-level groups gather repeated states across trajectories to compute relative advantages for individual actions.
 
 GiGPO is fully critic-free, maintains the same GPU memory footprint and LLM rollout cost as GRPO, yet achieves significantly better training efficiency and performance.
 
