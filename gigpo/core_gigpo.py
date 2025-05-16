@@ -1,7 +1,6 @@
 """
 Core functions to implement GiGPO algorithms.
-The function implemented in this file should be used by trainer with different distributed strategies to
-implement GiGPO
+The function implemented in this file should be used by trainer with different distributed strategies to implement GiGPO
 """
 
 import numpy as np
@@ -26,6 +25,30 @@ def to_hashable(x):
         return tuple(sorted((k, to_hashable(v)) for k, v in x.items()))
     else:
         raise TypeError(f"Unsupported type: {type(x)}")
+
+def summarize_group_size(group_size: list):
+    """
+    Summarize the dynamics of step-level group.
+    Args:
+        group_size : List[int]
+    """
+    counts = Counter(group_size)
+    total = sum(counts.values())
+    max_size = max(counts)
+
+    summary = {}
+    for size in range(1, max_size + 1):
+        cnt = counts.get(size, 0)
+        prop = cnt / total if total > 0 else 0
+        summary[size] = (cnt, prop)
+
+    print("Summary of step-level group sizes:")
+    print("Size | Count | Proportion")
+    print("-------------------------")
+    for size, (cnt, prop) in summary.items():
+        if prop:
+            print(f"{size:>4} | {cnt:>5} | {prop:>9.2%}")
+            
 
 def compute_step_discounted_returns(batch: DataProto, gamma: float):
     rewards = batch.non_tensor_batch['rewards'].astype(np.float32)
@@ -64,65 +87,9 @@ def compute_step_discounted_returns(batch: DataProto, gamma: float):
     all_returns = torch.tensor(all_returns, dtype=torch.float32, device=batch.batch['input_ids'].device)
     return all_returns
 
-
-def build_step_group(anchor_obs: np.array, index: np.array, summarize: bool = False):
-    """
-    Group observations by index and then cluster identical observations within each index group.
-    Assigns a unique step_group_uid (UUID) to each cluster.
-    
-    Parameters:
-    -----------
-    anchor_obs : np.array
-        Array of observation strings
-    index : np.array
-        Array of corresponding indices for each observation
-    summarize : bool
-        Whether to summarize the group sizes (default: True)
-    
-    Returns:
-    --------
-    np.array
-        Array of step_group_uid values corresponding to the original anchor_obs array
-    """
-    # Initialize the result array with placeholder values
-    step_group_uids = np.empty(len(anchor_obs), dtype=object)
-    
-    # Get unique indices
-    unique_indices = np.unique(index)
-
-    group_size = []
-    # Process each unique index
-    for idx in unique_indices:
-        # Get all observations for this index using np.where
-        indices = np.where(index == idx)[0]
-        obs_group = anchor_obs[indices]
-        
-        # Create clusters for identical observations
-        clusters = defaultdict(list)
-        for i, obs in enumerate(obs_group):
-            clusters[to_hashable(obs)].append(indices[i])  # Store the original index position
-        
-        # Assign unique step_group_uid to each cluster
-        for obs, original_indices in clusters.items():
-            # Generate a UUID for this cluster
-            uid = str(uuid.uuid4())
-            
-            # Assign the same step_group_uid to all elements in this cluster
-            group_size.append(len(original_indices))
-            for original_idx in original_indices:
-                step_group_uids[original_idx] = uid
-
-        # Validate that all elements have been assigned a uid
-    if None in step_group_uids or np.any(step_group_uids == None):
-        missing_indices = np.where(step_group_uids == None)[0]
-        raise ValueError(f"Failed to assign UIDs to all observations. Missing at indices: {missing_indices}")
-
-    if summarize:
-        summarize_group_size(group_size)
-    print(f"Avg size of step-level group: {np.mean(group_size)}")
-    return step_group_uids
-
-
+# ---------------------------------------------------------- #
+# ---------------- Core Functions of GiGPO ----------------- #
+# ---------------------------------------------------------- #
 
 def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    step_rewards: torch.Tensor,
@@ -205,6 +172,63 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
     return episode_advantages
 
 
+def build_step_group(anchor_obs: np.array, index: np.array, summarize: bool = False):
+    """
+    Group observations by index and then cluster identical observations within each index group.
+    Assigns a unique step_group_uid (UUID) to each cluster.
+    
+    Parameters:
+    -----------
+    anchor_obs : np.array
+        Array of observation strings
+    index : np.array
+        Array of corresponding indices for each observation
+    summarize : bool
+        Whether to summarize the group sizes (default: True)
+    
+    Returns:
+    --------
+    np.array
+        Array of step_group_uid values corresponding to the original anchor_obs array
+    """
+    # Initialize the result array with placeholder values
+    step_group_uids = np.empty(len(anchor_obs), dtype=object)
+    
+    # Get unique indices
+    unique_indices = np.unique(index)
+
+    group_size = []
+    # Process each unique index
+    for idx in unique_indices:
+        # Get all observations for this index using np.where
+        indices = np.where(index == idx)[0]
+        obs_group = anchor_obs[indices]
+        
+        # Create clusters for identical observations
+        clusters = defaultdict(list)
+        for i, obs in enumerate(obs_group):
+            clusters[to_hashable(obs)].append(indices[i])  # Store the original index position
+        
+        # Assign unique step_group_uid to each cluster
+        for obs, original_indices in clusters.items():
+            # Generate a UUID for this cluster
+            uid = str(uuid.uuid4())
+            
+            # Assign the same step_group_uid to all elements in this cluster
+            group_size.append(len(original_indices))
+            for original_idx in original_indices:
+                step_group_uids[original_idx] = uid
+
+        # Validate that all elements have been assigned a uid
+    if None in step_group_uids or np.any(step_group_uids == None):
+        missing_indices = np.where(step_group_uids == None)[0]
+        raise ValueError(f"Failed to assign UIDs to all observations. Missing at indices: {missing_indices}")
+
+    if summarize:
+        summarize_group_size(group_size)
+    print(f"Avg size of step-level group: {np.mean(group_size)}")
+    return step_group_uids
+
 
 def step_norm_reward(step_rewards: torch.Tensor,
                       eos_mask: torch.Tensor,
@@ -258,26 +282,3 @@ def step_norm_reward(step_rewards: torch.Tensor,
     
     return step_advantages
 
-
-def summarize_group_size(group_size: list):
-    """
-    Summarize the dynamics of step-level group.
-    Args:
-        group_size : List[int]
-    """
-    counts = Counter(group_size)
-    total = sum(counts.values())
-    max_size = max(counts)
-
-    summary = {}
-    for size in range(1, max_size + 1):
-        cnt = counts.get(size, 0)
-        prop = cnt / total if total > 0 else 0
-        summary[size] = (cnt, prop)
-
-    print("Summary of step-level group sizes:")
-    print("Size | Count | Proportion")
-    print("-------------------------")
-    for size, (cnt, prop) in summary.items():
-        if prop:
-            print(f"{size:>4} | {cnt:>5} | {prop:>9.2%}")

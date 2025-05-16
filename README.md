@@ -1,8 +1,18 @@
 <h1 align="center">verl-agent</h1>
+<p align="center">
+  <a href="https://github.com/langfengQ/verl-agent"><img src="https://img.shields.io/badge/Paper-arXiv%20Preprint-blue.svg?style=flat&logo=arxiv" alt="Paper"></a>
+  &nbsp;
+  <a href="https://github.com/langfengQ/verl-agent"><img src="https://img.shields.io/badge/Homepage-Project%20Page-brightgreen?style=flat&logo=github" alt="Homepage"></a>
+</p>
 
-`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents via reinforcement learning (RL)**. `verl-agent` provides a **diverse set of RL algorithms** and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
+`verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents via reinforcement learning (RL)**. 
 
-Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step independently and is therefore highly scalable for **very long-horizon, multi-turn RL training** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
+Unlike prior approaches that concatenate full interaction histories, `verl-agent` processes each step **independently** and is therefore **highly scalable for very long-horizon, multi-turn RL training** (e.g., tasks in ALFWorld can require up to 50 steps to complete).
+
+`verl-agent` provides a **diverse set of RL algorithms** (including our new algorithm GiGPO) and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
+
+# News
+- The preprint paper is comming very soon.
 
 # Table of Contents
 
@@ -25,6 +35,7 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
     - [5. GiGPO (dynamic)](#5-gigpo-dynamic)  
   - [Prompt-based Agent with GPT-4o](#prompt-based-agent-with-gpt-4o)  
 - [Acknowledgement](#acknowledgement)
+- [Citation](#citation)
 
 # Key Features
 
@@ -39,11 +50,11 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
   
 - **Parallelized Gym-Style Environments and Group Environments**
 
-  `verl-agent` provides a gym-style interface with support for parallelized environments. This enables high-throughput rollouts, speeding up training. In addtion, `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`. This is especially useful for algorithms like GRPO and DAPO that requires multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollou.n` in [ppo_trainer.yaml](/verl/trainer/config/ppo_trainer.yaml) config file.
+  `verl-agent` provides a gym-style interface with support for parallelized environments. This enables high-throughput rollouts, speeding up training. In addition, `verl-agent` introduces the concept of group environments. All environments within a group share identical initial states during `reset()`. This is especially useful for algorithms like GRPO and DAPO that require multiple rollouts on the same state. You can configure the number of rollouts per group using the `env.rollout.n` in [ppo_trainer.yaml](./verl/trainer/config/ppo_trainer.yaml) config file.
 
 - **Diverse RL Algorithms**
 
-  `verl-agent` includes implementations of various RL algorithms, such as [GiGPO](https://github.com/langfengQ/verl-agent), [GRPO](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), [DAPO](https://arxiv.org/abs/2503.14476), and their variants with dynamic sampling and clip-higher.
+  `verl-agent` includes implementations of various RL algorithms, such as [GRPO](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), [DAPO](https://arxiv.org/abs/2503.14476), and our new state-of-the-art algorithm [GiGPO](https://github.com/langfengQ/verl-agent). It also supports several variants enhanced with dynamic sampling and clip-higher techniques.
 
 
 - **Rich Suite of Environments**
@@ -59,10 +70,12 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 |-|-|-|-|-|-|
 | GiGPO | ALFWorld | Qwen2.5-1.5B-Instruct | 86.1% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/78zz4sc9) | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 | GiGPO | WebShop| Qwen2.5-1.5B-Instruct | 67.4% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/zfnvpvxe)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
+| GiGPO (dynamic) | WebShop| Qwen2.5-1.5B-Instruct | 75.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/zfnvpvxe)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 | GiGPO | Sokoban [6x6]| Qwen2.5-VL-3B-Instruct | 81.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/xm92tyea)  | ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 | GiGPO | NumberLine | Qwen2.5-VL-3B-Instruct | 100.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/81qzsc3n)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 | GiGPO | EZPoints | Qwen2.5-VL-3B-Instruct | 100.0% | [![wandb](https://img.shields.io/badge/W%26B-view-FFBE00?logo=wandb)](https://api.wandb.ai/links/langfeng-cs-nanyang-technological-university-singapore/k0y51zei)| ![HF](https://img.shields.io/badge/HuggingFace-model-orange?logo=huggingface) |
 
+Note: The W&B logs also include the training records for GRPO.
 
 # Installation
 ## Install veRL
@@ -204,7 +217,7 @@ To run an agent in any of these environments, you must first install and configu
 
 # Run Examples
 ## RL Training
-We provide out-of-the-box scripts in the ["examples/"](examples/) directory for training agents in different environments.
+We provide out-of-the-box scripts in the ["examples/"](./examples/) directory for training agents in different environments.
 
 Here are some examples:
 ### 1. GiGPO
@@ -274,3 +287,14 @@ We gratefully acknowledge the contributions of the [veRL](https://github.com/vol
 Special thanks to the [RAGEN](https://github.com/RAGEN-AI/RAGEN) project for their codebase, which inspired early design choices during the development of `verl-agent`.
 
 We also thank the developers of [ALFWorld](https://github.com/alfworld/alfworld), [Sokoban](https://github.com/mpSchrader/gym-sokoban), [Gym Cards](https://github.com/RL4VLM/RL4VLM/tree/main/gym-cards), [WebShop](https://github.com/princeton-nlp/WebShop), and [AppWorld](https://github.com/stonybrooknlp/appworld) for providing high-quality interactive environments used in this project.
+
+## Citation
+If you find `verl-agent` useful in your research or applications, we would appreciate it if you could cite our work:
+
+```
+@article{feng2025group,
+  title={Group-in-Group Policy Optimization for LLM Agent Training},
+  author={Lang Feng, Zhenghai Xue, Tingcong Liu, Bo An},
+  year={2025}
+}
+```
