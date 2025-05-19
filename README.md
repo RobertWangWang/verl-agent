@@ -12,7 +12,7 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 `verl-agent` provides a **diverse set of RL algorithms** (including our new algorithm GiGPO) and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
 
 # News
-- The preprint paper is comming very soon.
+- [2025.5.19] Our paper has been released. See [link](https://arxiv.org/abs/2505.10978).
 
 # Table of Contents
 
@@ -295,6 +295,7 @@ If you find `verl-agent` useful in your research or applications, we would appre
 @article{feng2025group,
   title={Group-in-Group Policy Optimization for LLM Agent Training},
   author={Lang Feng, Zhenghai Xue, Tingcong Liu, Bo An},
+  journal={arXiv preprint arXiv:2505.10978},
   year={2025}
 }
 ```
