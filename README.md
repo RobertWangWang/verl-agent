@@ -1,13 +1,8 @@
 <h1 align="center">verl-agent</h1>
 <p align="center">
-  <a href="https://arxiv.org/abs/2505.10978">
-    <img src="https://img.shields.io/badge/arXiv-arXiv%20Preprint-B31B1B?style=flat&logo=arxiv&logoColor=white" alt="arXiv Paper">
-  </a>
+  <a href="https://arxiv.org/abs/2505.10978"><img src="https://img.shields.io/badge/arXiv-arXiv%20Preprint-B31B1B?style=flat&logo=arxiv&logoColor=white" alt="arXiv Paper"></a>
   &nbsp;
-  <a href="https://github.com/langfengQ/verl-agent">
-    <img src="https://img.shields.io/badge/Homepage-Project%20Page-brightgreen?style=flat&logo=github" 
-    alt="Homepage">
-  </a>
+  <a href="https://github.com/langfengQ/verl-agent"><img src="https://img.shields.io/badge/Homepage-Project%20Page-brightgreen?style=flat&logo=github" alt="Homepage"></a>
 </p>
 
 
