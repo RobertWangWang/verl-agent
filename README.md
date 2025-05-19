@@ -1,9 +1,15 @@
 <h1 align="center">verl-agent</h1>
 <p align="center">
-  <a href="https://github.com/langfengQ/verl-agent"><img src="https://img.shields.io/badge/Paper-arXiv%20Preprint-blue.svg?style=flat&logo=arxiv" alt="Paper"></a>
+  <a href="https://arxiv.org/abs/xxx">
+    <img src="https://img.shields.io/badge/arXiv-arXiv%20Preprint-B31B1B?style=flat&logo=arxiv&logoColor=white" alt="arXiv Paper">
+  </a>
   &nbsp;
-  <a href="https://github.com/langfengQ/verl-agent"><img src="https://img.shields.io/badge/Homepage-Project%20Page-brightgreen?style=flat&logo=github" alt="Homepage"></a>
+  <a href="https://github.com/langfengQ/verl-agent">
+    <img src="https://img.shields.io/badge/Homepage-Project%20Page-brightgreen?style=flat&logo=github" 
+    alt="Homepage">
+  </a>
 </p>
+
 
 `verl-agent` is an extension of [veRL](https://github.com/volcengine/verl), specifically designed for training **large language model (LLM) agents via reinforcement learning (RL)**. 
 
