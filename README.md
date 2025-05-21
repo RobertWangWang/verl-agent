@@ -237,7 +237,7 @@ bash examples/gigpo_trainer/run_alfworld.sh # ALFWorld
 bash examples/gigpo_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/gigpo_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/gigpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 2. GRPO
 [GRPO](https://arxiv.org/abs/2402.03300) is a critic-free algorithm that estimates relative advantages based on a group of full episode trajectories.
@@ -248,7 +248,7 @@ bash examples/grpo_trainer/run_alfworld.sh # ALFWorld
 bash examples/grpo_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/grpo_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/grpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 3. PPO
 [PPO](https://arxiv.org/abs/1707.06347) is a classic actor-critic algorithm that updates the policy using a clipped objective to ensure stable learning. It requires a separate value network (critic) to estimate state values.
@@ -283,7 +283,7 @@ bash examples/gigpo_dynamic_trainer/run_alfworld.sh # ALFWorld
 bash examples/gigpo_dynamic_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/gigpo_dynamic_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/gigpo_dynamic_trainer/run_sokoban.sh # Sokoban
 ```
 ## Prompt-based Agent with GPT-4o
 We also provide a prompt-based GPT-4o agent.
