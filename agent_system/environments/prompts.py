@@ -47,8 +47,8 @@ Your current observation is:
 Your admissible actions are ["up", "down", "left", "right"].
 
 Now it's your turn to make a move (choose ONE action only for the current step).
-You should first reason step-by-step about the current situation before deciding on a final action. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
+You should first reason step-by-step about the current situation — observe the positions of boxes and targets, plan a path to push a box toward a target, and avoid traps like corners or walls. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
 """
 
 SOKOBAN_TEMPLATE = """
@@ -78,8 +78,8 @@ You are now at step {current_step} and your current observation is:
 Your admissible actions are ["up", "down", "left", "right"].
 
 Now it's your turn to make a move (choose ONE action only for the current step).
-You should first reason step-by-step about the current situation before deciding on a final action. This reasoning process MUST be enclosed within <think> </think> tags. 
-Once you've finished your reasoning, you should choose the final action and present it within <action> </action> tags.
+You should first reason step-by-step about the current situation — observe the positions of boxes and targets, plan a path to push a box toward a target, and avoid traps like corners or walls. This reasoning process MUST be enclosed within <think> </think> tags. 
+Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
 """
 
 SOKOBAN_VISUAL_TEMPLATE = """
