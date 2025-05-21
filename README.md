@@ -13,6 +13,7 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 `verl-agent` provides a **diverse set of RL algorithms** (including our new algorithm GiGPO) and a **rich suite of agent environments**, enabling the development of reasoning agents in both visual and text-based tasks.
 
 # News
+- [2025.5.22] Add support for RLOO.
 - [2025.5.19] Our paper has been released. See [link](https://arxiv.org/abs/2505.10978).
 
 # Table of Contents
@@ -32,8 +33,9 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
     - [1. GiGPO](#1-gigpo)  
     - [2. GRPO](#2-grpo)  
     - [3. PPO](#3-ppo)  
-    - [4. DAPO](#4-dapo)  
-    - [5. GiGPO (dynamic)](#5-gigpo-dynamic)  
+    - [4. RLOO](#4-rloo)  
+    - [5. DAPO](#5-dapo)  
+    - [6. GiGPO (dynamic)](#6-gigpo-dynamic)  
   - [Prompt-based Agent with GPT-4o](#prompt-based-agent-with-gpt-4o)  
 - [Acknowledgement](#acknowledgement)
 - [Citation](#citation)
@@ -235,7 +237,7 @@ bash examples/gigpo_trainer/run_alfworld.sh # ALFWorld
 bash examples/gigpo_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/gigpo_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/gigpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 2. GRPO
 [GRPO](https://arxiv.org/abs/2402.03300) is a critic-free algorithm that estimates relative advantages based on a group of full episode trajectories.
@@ -246,7 +248,7 @@ bash examples/grpo_trainer/run_alfworld.sh # ALFWorld
 bash examples/grpo_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/grpo_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/grpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 3. PPO
 [PPO](https://arxiv.org/abs/1707.06347) is a classic actor-critic algorithm that updates the policy using a clipped objective to ensure stable learning. It requires a separate value network (critic) to estimate state values.
@@ -256,15 +258,23 @@ bash examples/ppo_trainer/run_alfworld.sh # ALFWorld
 ```bash
 bash examples/ppo_trainer/run_webshop.sh # WebShop
 ```
-### 4. DAPO
-[DAPO](https://arxiv.org/abs/2503.14476) is a critic-free algorithm that enhances GRPO with techniques like dynamic sampling and clip-higher.
+### 4. RLOO
+[RLOO](https://arxiv.org/abs/2402.14740). Our implementation uses a leave-one-out estimate and the PPO-clip update (instead of the REINFORCE update), making it closer to [LOOP](https://arxiv.org/abs/2502.01600).
+```bash
+bash examples/rloo_trainer/run_alfworld.sh # ALFWorld
+```
+```bash
+bash examples/rloo_trainer/run_webshop.sh # WebShop
+```
+### 5. DAPO
+[DAPO](https://arxiv.org/abs/2503.14476) enhances GRPO with techniques like dynamic sampling and clip-higher.
 ```bash
 bash examples/dapo_trainer/run_alfworld.sh # ALFWorld
 ```
 ```bash
 bash examples/dapo_trainer/run_webshop.sh # WebShop
 ```
-### 5. GiGPO (dynamic)
+### 6. GiGPO (dynamic)
 GiGPO uses dynamic sampling and clip-higher from DAPO
 ```bash
 bash examples/gigpo_dynamic_trainer/run_alfworld.sh # ALFWorld
@@ -273,7 +283,7 @@ bash examples/gigpo_dynamic_trainer/run_alfworld.sh # ALFWorld
 bash examples/gigpo_dynamic_trainer/run_webshop.sh # WebShop
 ```
 ```bash
-bash examples/gigpo_dynamic_trainer/run_sokoban_visual.sh # Sokoban
+bash examples/gigpo_dynamic_trainer/run_sokoban.sh # Sokoban
 ```
 ## Prompt-based Agent with GPT-4o
 We also provide a prompt-based GPT-4o agent.

@@ -83,7 +83,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             # exclude 'help' in admissible_actions[i]
             reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i] if s != 'help')
 
-            if init:
+            if init or history_length <= 0:
                 obs = ALFWORLD_INIT_TEMPLATE.format(
                     current_observation=text_obs[i],
                     admissible_actions=reformatted_admissible_actions
@@ -215,13 +215,13 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
 
         return next_observations, rewards, dones, infos
 
-    def build_text_obs(self, infos, text_obs: List[str]=None, init: bool = False, history_length: int = 5) -> List[str]:
+    def build_text_obs(self, infos, text_obs: List[str]=None, init: bool = False, history_length: int = 2) -> List[str]:
         """
         This function builds the text observation for the agent.
         """
         postprocess_text_obs = []
         for i in range(len(infos)):
-            if init:
+            if init or history_length <= 0:
                 obs = SOKOBAN_VISUAL_TEMPLATE if self.is_multi_modal \
                  else SOKOBAN_INIT_TEMPLATE.format(
                     current_observation=text_obs[i],
@@ -397,7 +397,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
             available_actions = self.format_avail_actions(infos[i]['available_actions'])
             reformatted_available_actions = "\n".join(f"'{s}'," for s in available_actions)
 
-            if init or history_length == 0:
+            if init or history_length <= 0:
                 obs = WEBSHOP_INIT_TEMPLATE.format(
                     task_description=self.tasks[i],
                     current_observation=text_obs[i],

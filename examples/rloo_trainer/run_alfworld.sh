@@ -2,10 +2,11 @@ set -x
 ENGINE=${1:-vllm}
 export VLLM_ATTENTION_BACKEND=XFORMERS
 
-train_data_size=32
+# Note: Our implementation uses a leave-one-out estimate and the PPO-clip update (instead of the REINFORCE update). So it is more like LOOP (https://arxiv.org/abs/2502.01600)
+
+train_data_size=16
 val_data_size=128
 group_size=8
-mode="mean_norm" # "mean_norm" or "mean_std_norm"
 
 python3 -m examples.data_preprocess.prepare \
     --mode 'text' \
@@ -13,7 +14,7 @@ python3 -m examples.data_preprocess.prepare \
     --val_data_size $val_data_size
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
+    algorithm.adv_estimator=rloo \
     data.train_files=$HOME/data/verl-agent/text/train.parquet \
     data.val_files=$HOME/data/verl-agent/text/test.parquet \
     data.train_batch_size=$train_data_size \
@@ -26,8 +27,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.path=Qwen/Qwen2.5-1.5B-Instruct \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.model.use_remove_padding=True \
-    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=16 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=256 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=32 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.01 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
@@ -48,20 +49,17 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
-    algorithm.gigpo.step_advantage_w=1.0 \
-    algorithm.gigpo.mode=$mode \
-    env.env_name=Sokoban \
+    env.env_name=alfworld/AlfredTWEnv \
     env.seed=0 \
-    env.max_steps=15 \
+    env.max_steps=50 \
     env.rollout.n=$group_size \
     trainer.critic_warmup=0 \
     trainer.logger=['console','wandb'] \
-    trainer.project_name='verl_agent_sokoban' \
-    trainer.experiment_name='gigpo_qwen2.5_1.5b' \
+    trainer.project_name='verl_agent_alfworld' \
+    trainer.experiment_name='rloo_qwen2.5_1.5b' \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=-1 \
-    trainer.test_freq=10 \
-    trainer.total_epochs=300 \
+    trainer.test_freq=5 \
+    trainer.total_epochs=150 \
     trainer.val_before_train=True $@
