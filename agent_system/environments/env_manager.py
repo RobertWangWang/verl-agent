@@ -84,7 +84,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i] if s != 'help')
 
             if init or history_length <= 0:
-                obs = ALFWORLD_INIT_TEMPLATE.format(
+                obs = ALFWORLD_TEMPLATE_NO_HIS.format(
                     current_observation=text_obs[i],
                     admissible_actions=reformatted_admissible_actions
                 )
@@ -223,7 +223,7 @@ class SokobanEnvironmentManager(EnvironmentManagerBase):
         for i in range(len(infos)):
             if init or history_length <= 0:
                 obs = SOKOBAN_VISUAL_TEMPLATE if self.is_multi_modal \
-                 else SOKOBAN_INIT_TEMPLATE.format(
+                 else SOKOBAN_TEMPLATE_NO_HIS.format(
                     current_observation=text_obs[i],
                 )
             else:
@@ -398,7 +398,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
             reformatted_available_actions = "\n".join(f"'{s}'," for s in available_actions)
 
             if init or history_length <= 0:
-                obs = WEBSHOP_INIT_TEMPLATE.format(
+                obs = WEBSHOP_TEMPLATE_NO_HIS.format(
                     task_description=self.tasks[i],
                     current_observation=text_obs[i],
                     available_actions=reformatted_available_actions
@@ -425,7 +425,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                 )
                 if len(obs) > 13000:
                     print(f"Warning len(obs)={len(obs)} is too long")
-                    obs = WEBSHOP_INIT_TEMPLATE.format(
+                    obs = WEBSHOP_TEMPLATE_NO_HIS.format(
                         task_description=self.tasks[i],
                         current_observation=text_obs[i],
                         available_actions=reformatted_available_actions
@@ -493,7 +493,7 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
         postprocess_text_obs = []
         if init and self.supervisors is not None:
             for i in range(len(text_obs)):
-                obs = APPWORLD_INIT_TEMPLATE.format(
+                obs = APPWORLD_TEMPLATE_NO_HIS.format(
                         supervisor_first_name=self.supervisors[i]['first_name'],
                         supervisor_last_name=self.supervisors[i]['last_name'],
                         supervisor_email=self.supervisors[i]['email'],

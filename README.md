@@ -14,7 +14,7 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 
 # News
 - [2025.5.22] Add support for RLOO.
-- [2025.5.19] Our paper has been released. See [link](https://arxiv.org/abs/2505.10978).
+- [2025.5.19] Our paper on GiGPO has been released. See [link](https://arxiv.org/abs/2505.10978).
 
 # Table of Contents
 
@@ -37,6 +37,9 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
     - [5. DAPO](#5-dapo)  
     - [6. GiGPO (dynamic)](#6-gigpo-dynamic)  
   - [Prompt-based Agent with GPT-4o](#prompt-based-agent-with-gpt-4o)  
+- [Tips](#tips)
+  - [1. Customize Your Own Prompts](#1-customize-your-own-prompts)
+  - [2. Add New Environments](#2-add-new-environments)
 - [Acknowledgement](#acknowledgement)
 - [Citation](#citation)
 
@@ -57,7 +60,7 @@ Unlike prior approaches that concatenate full interaction histories, `verl-agent
 
 - **Diverse RL Algorithms**
 
-  `verl-agent` includes implementations of various RL algorithms, such as [GRPO](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), [DAPO](https://arxiv.org/abs/2503.14476), and our new state-of-the-art algorithm [GiGPO](https://github.com/langfengQ/verl-agent). It also supports several variants enhanced with dynamic sampling and clip-higher techniques.
+  `verl-agent` includes implementations of various RL algorithms, such as [GRPO](https://arxiv.org/abs/2402.03300), [PPO](https://arxiv.org/abs/1707.06347), [DAPO](https://arxiv.org/abs/2503.14476), [RLOO](https://arxiv.org/abs/2402.14740) and our new state-of-the-art algorithm [GiGPO](https://github.com/langfengQ/verl-agent). It also supports several variants enhanced with dynamic sampling and clip-higher techniques.
 
 
 - **Rich Suite of Environments**
@@ -224,7 +227,7 @@ We provide out-of-the-box scripts in the ["examples/"](./examples/) directory fo
 
 Here are some examples:
 ### 1. GiGPO
-[GiGPO](https://github.com/langfengQ/verl-agent) is our novel algorithm designed to support fine-grained credit assignment in long-horizon LLM agent training. It introduces a two-level grouping mechanism:
+GiGPO is our novel algorithm designed to support fine-grained credit assignment in long-horizon LLM agent training. It introduces a two-level grouping mechanism:
 - Episode-level groups capture overall task success via total returns (like GRPO).
 - Step-level groups gather repeated states across trajectories to compute relative advantages for individual actions.
 
@@ -240,7 +243,7 @@ bash examples/gigpo_trainer/run_webshop.sh # WebShop
 bash examples/gigpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 2. GRPO
-[GRPO](https://arxiv.org/abs/2402.03300) is a critic-free algorithm that estimates relative advantages based on a group of full episode trajectories.
+GRPO is a critic-free algorithm that estimates relative advantages based on a group of full episode trajectories.
 ```bash
 bash examples/grpo_trainer/run_alfworld.sh # ALFWorld
 ```
@@ -251,7 +254,7 @@ bash examples/grpo_trainer/run_webshop.sh # WebShop
 bash examples/grpo_trainer/run_sokoban.sh # Sokoban
 ```
 ### 3. PPO
-[PPO](https://arxiv.org/abs/1707.06347) is a classic actor-critic algorithm that updates the policy using a clipped objective to ensure stable learning. It requires a separate value network (critic) to estimate state values.
+PPO is a classic actor-critic algorithm that updates the policy using a clipped objective to ensure stable learning. It requires a separate value network (critic) to estimate state values.
 ```bash
 bash examples/ppo_trainer/run_alfworld.sh # ALFWorld
 ```
@@ -259,7 +262,7 @@ bash examples/ppo_trainer/run_alfworld.sh # ALFWorld
 bash examples/ppo_trainer/run_webshop.sh # WebShop
 ```
 ### 4. RLOO
-[RLOO](https://arxiv.org/abs/2402.14740). Our implementation uses a leave-one-out estimate and the PPO-clip update (instead of the REINFORCE update), making it closer to [LOOP](https://arxiv.org/abs/2502.01600).
+For RLOO, we use a leave-one-out estimate and the PPO-clip update (instead of the REINFORCE update), making it closer to [LOOP](https://arxiv.org/abs/2502.01600).
 ```bash
 bash examples/rloo_trainer/run_alfworld.sh # ALFWorld
 ```
@@ -267,7 +270,7 @@ bash examples/rloo_trainer/run_alfworld.sh # ALFWorld
 bash examples/rloo_trainer/run_webshop.sh # WebShop
 ```
 ### 5. DAPO
-[DAPO](https://arxiv.org/abs/2503.14476) enhances GRPO with techniques like dynamic sampling and clip-higher.
+DAPO enhances GRPO with techniques like dynamic sampling and clip-higher.
 ```bash
 bash examples/dapo_trainer/run_alfworld.sh # ALFWorld
 ```
@@ -291,6 +294,23 @@ We also provide a prompt-based GPT-4o agent.
 bash examples/prompt_agent/run_gpt4o_agent.sh # ALFWorld
 ```
 
+# Tips
+## 1. Customize Your Own Prompts  
+We adopt a simple and minimal prompt format in our implementation. For example, in the WebShop environment:
+```
+You are an expert autonomous agent operating in the WebShop e‑commerce environment.
+Your task is to: {task_description}. Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}. You are now at step {current_step} and your current observation is: {current_observation}. Your admissible actions of the current situation are: [{available_actions}].
+
+Now it's your turn to take one action for the current step.
+You should first reason step-by-step about the current situation, then think carefully which admissible action best advances the shopping goal. This reasoning process MUST be enclosed within <think> </think> tags. Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
+```
+If you wish to further enhance or customize them, you can find and edit them in: [agent_system/environments/prompts](./agent_system/environments/prompts/).
+
+## 2. Add New Environments
+To add a new environment, implement the environment package (gym-style interface and multi-process execution) in [agent_system/environments/env_package/](./agent_system/environments/env_package/), and create the corresponding prompt files in [agent_system/environments/prompts](./agent_system/environments/prompts/). For a reference implementation, see the webshop environment:
+- Environment package: [webshop package](./agent_system/environments/env_package/webshop)
+- Prompts: [webshop prompts](./agent_system/environments/prompts/webshop.py)
+
 ## Acknowledgement
 
 We gratefully acknowledge the contributions of the [veRL](https://github.com/volcengine/verl) team for providing a solid RL infrastructure.
@@ -300,12 +320,12 @@ Special thanks to the [RAGEN](https://github.com/RAGEN-AI/RAGEN) project for the
 We also thank the developers of [ALFWorld](https://github.com/alfworld/alfworld), [Sokoban](https://github.com/mpSchrader/gym-sokoban), [Gym Cards](https://github.com/RL4VLM/RL4VLM/tree/main/gym-cards), [WebShop](https://github.com/princeton-nlp/WebShop), and [AppWorld](https://github.com/stonybrooknlp/appworld) for providing high-quality interactive environments used in this project.
 
 ## Citation
-If you find `verl-agent` useful in your research or applications, we would appreciate it if you could cite our work:
+If you find `verl-agent` and `GiGPO` useful in your research or applications, we would appreciate it if you could cite our work:
 
 ```
 @article{feng2025group,
   title={Group-in-Group Policy Optimization for LLM Agent Training},
-  author={Lang Feng, Zhenghai Xue, Tingcong Liu, Bo An},
+  author={Feng, Lang and Xue, Zhenghai and Liu, Tingcong and An, Bo},
   journal={arXiv preprint arXiv:2505.10978},
   year={2025}
 }
