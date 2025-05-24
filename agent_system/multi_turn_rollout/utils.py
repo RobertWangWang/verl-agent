@@ -138,10 +138,15 @@ def filter_group_data(batch_list : List[Dict],
             keep_indices = np.concatenate((keep_indices, group_indices))
     
     # Filter the batch_list, episode_rewards, episode_lengths, and success based on the keep_indices
+    success = {
+        key: value[keep_indices]
+        for key, value in success.items()
+        if len(value) == len(batch_list)
+    }
     batch_list = [batch_list[i] for i in keep_indices]
     episode_rewards = episode_rewards[keep_indices]
     episode_lengths = episode_lengths[keep_indices]
-    success = {key: value[keep_indices] for key, value in success.items()}
+    # success = {key: value[keep_indices] for key, value in success.items()}
     traj_uid = traj_uid[keep_indices]
 
     return batch_list, episode_rewards, episode_lengths, success, traj_uid
