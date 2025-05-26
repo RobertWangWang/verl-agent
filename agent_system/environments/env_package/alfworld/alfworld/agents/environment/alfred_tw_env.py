@@ -64,7 +64,6 @@ class AlfredExpert(textworld.core.Wrapper):
 
         self.expert_type = expert_type
         self.prev_command = ""
-
         if expert_type not in (AlfredExpertType.HANDCODED, AlfredExpertType.PLANNER):
             msg = "Unknown type of AlfredExpert: {}.\nExpecting either '{}' or '{}'."
             msg = msg.format(expert_type, AlfredExpertType.HANDCODED, AlfredExpertType.PLANNER)
@@ -126,7 +125,8 @@ class AlfredTWEnv(object):
             print(colored(msg, "yellow"))
 
         self.collect_game_files()
-
+        self.use_expert = False
+        print(f"use_expert = {self.use_expert}")
     def collect_game_files(self, verbose=False):
         def log(info):
             if verbose:
@@ -259,8 +259,10 @@ class AlfredTWEnv(object):
             max_nb_steps_per_episode = self.config["rl"]["training"]["max_nb_steps_per_episode"]
         elif training_method == "dagger":
             max_nb_steps_per_episode = self.config["dagger"]["training"]["max_nb_steps_per_episode"]
-
-            expert_plan = True if self.train_eval == "train" else False
+            if self.use_expert:
+                expert_plan = True if self.train_eval == "train" else False
+            else:
+                expert_plan = False
             if expert_plan:
                 wrappers.append(AlfredExpert(expert_type))
                 request_infos.extras.append("expert_plan")
