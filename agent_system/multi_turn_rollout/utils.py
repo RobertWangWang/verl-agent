@@ -68,7 +68,7 @@ def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 256 * 
     return image
 
 
-def adjust_batch(config, data: DataProto) -> DataProto:
+def adjust_batch(config, data: DataProto, mode="copy") -> DataProto:
     size_divisor_ref = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
     size_divisor_rollout = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * config.trainer.n_gpus_per_node
     size_divisor_actor = config.actor_rollout_ref.actor.ppo_mini_batch_size
@@ -76,9 +76,11 @@ def adjust_batch(config, data: DataProto) -> DataProto:
 
     # check if the batch size is divisible by the dp size, if not, delete the last few samples to make it divisible
     bs = len(data)
-    if bs % size_divisor != 0:
-        remainder = bs % size_divisor
-        
+    remainder = bs % size_divisor
+    if remainder == 0:
+        return data
+    
+    if mode == "delete":
         # Generate indices to remove, rather than indices to keep
         remove_indices = np.random.choice(bs, remainder, replace=False)
         # Sort remove_indices to maintain stability when deleting
@@ -94,8 +96,14 @@ def adjust_batch(config, data: DataProto) -> DataProto:
         non_tensor_data = {key: val[keep_mask] for key, val in data.non_tensor_batch.items()}
         adjusted_batch = DataProto(batch=tensor_data, non_tensor_batch=non_tensor_data, meta_info=data.meta_info)
         del data
+    elif mode == "copy":
+        to_add = size_divisor - remainder
+        dup_indices = np.random.choice(bs, to_add, replace=False)
+        dup_proto = data.select_idxs(dup_indices)
+
+        adjusted_batch = DataProto.concat([data, dup_proto])
     else:
-        adjusted_batch = data
+        raise ValueError(f"Unsupported mode: {mode}")
 
     return adjusted_batch
 

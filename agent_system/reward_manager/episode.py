@@ -25,49 +25,15 @@ class EpisodeRewardManager:
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.normalize_by_length = normalize_by_length
 
-    def verify(self, data):
-        scores = []
-        for i in range(len(data)):
-            data_item = data[i]  # DataProtoItem
-
-            prompt_ids = data_item.batch['prompts']
-
-            prompt_length = prompt_ids.shape[-1]
-
-            valid_prompt_length = data_item.batch['attention_mask'][:prompt_length].sum()
-            valid_prompt_ids = prompt_ids[-valid_prompt_length:]
-
-            response_ids = data_item.batch['responses']
-            valid_response_length = data_item.batch['attention_mask'][prompt_length:].sum()
-            valid_response_ids = response_ids[:valid_response_length]
-
-            # decode
-            prompt_str = self.tokenizer.decode(valid_prompt_ids)
-            response_str = self.tokenizer.decode(valid_response_ids)
-
-            # ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
-
-            data_source = data_item.non_tensor_batch['data_source']
-
-            extra_info = data_item.non_tensor_batch.get('extra_info', None)
-
-            episode_rewards = data_item.non_tensor_batch['episode_rewards']
-            episode_lengths = data_item.non_tensor_batch['episode_lengths']
-            if self.normalize_by_length:
-                score = episode_rewards / episode_lengths
-            else:
-                score = episode_rewards
-
-            scores.append(score)
-        data.batch['acc'] = torch.tensor(scores, dtype=torch.float32, device=prompt_ids.device)
-        return scores
-
-    def __call__(self, data: DataProto):
+    def __call__(self, data: DataProto, return_dict=False):
         """We will expand this function gradually based on the available datasets"""
 
         # If there is rm score, we directly return rm score. Otherwise, we compute via rm_score_fn
-        if 'rm_scores' in data.batch.keys():
-            return data.batch['rm_scores']
+        if "rm_scores" in data.batch.keys():
+            if return_dict:
+                return {"reward_tensor": data.batch["rm_scores"]}
+            else:
+                return data.batch["rm_scores"]
 
         reward_tensor = torch.zeros_like(data.batch['responses'], dtype=torch.float32)
 
@@ -120,4 +86,10 @@ class EpisodeRewardManager:
                 print("[response]", response_str)
                 print("[score]", score)
 
-        return reward_tensor
+        if return_dict:
+            return {
+                "reward_tensor": reward_tensor,
+                "reward_extra_info": {},
+            }
+        else:
+            return reward_tensor

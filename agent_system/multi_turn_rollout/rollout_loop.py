@@ -59,12 +59,17 @@ class TrajectoryCollector:
         _obs_anchor = torch_to_numpy(obs_anchor, is_object=True) if isinstance(obs_anchor, torch.Tensor) else obs_anchor
 
         # Build chat structure
-        obs_content = raw_prompt[0]['content']
-        if '<image>' in obs_content: 
-            obs_content = obs_content.replace('<image>', '')
+        # obs_content = raw_prompt[0]['content']
+        # if '<image>' in obs_content: 
+        #     obs_content = obs_content.replace('<image>', '')
 
+        # Build chat structure
+        obs_content = ''
         if obs_text is not None:
             obs_content += obs_text
+        else:
+            print(f"Warning: No text observation found!")
+
         
         chat = np.array([{
             "content": obs_content,
@@ -303,16 +308,18 @@ class TrajectoryCollector:
 
             batch = self.preprocess_batch(gen_batch=gen_batch, obs=obs)
 
-            if 'multi_modal_inputs' in batch.non_tensor_batch.keys():
-                batch_input = batch.pop(
-                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                    non_tensor_batch_keys=['raw_prompt_ids', 'multi_modal_data', 'multi_modal_inputs'],
-                )
-            else:
-                batch_input = batch.pop(
-                    batch_keys=['input_ids', 'attention_mask', 'position_ids'],
-                    non_tensor_batch_keys=['raw_prompt_ids'],
-                )
+            batch_keys_to_pop = ["input_ids", "attention_mask", "position_ids"]
+            non_tensor_batch_keys_to_pop = ["raw_prompt_ids"]
+            if "multi_modal_data" in batch.non_tensor_batch:
+                non_tensor_batch_keys_to_pop.append("multi_modal_data")
+            if "raw_prompt" in batch.non_tensor_batch:
+                non_tensor_batch_keys_to_pop.append("raw_prompt")
+            if "tools_kwargs" in batch.non_tensor_batch:
+                non_tensor_batch_keys_to_pop.append("tools_kwargs")
+            batch_input = batch.pop(
+                batch_keys=batch_keys_to_pop,
+                non_tensor_batch_keys=non_tensor_batch_keys_to_pop,
+            )
 
             batch_input.meta_info = gen_batch.meta_info
 

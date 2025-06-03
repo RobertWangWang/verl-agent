@@ -93,9 +93,10 @@ def compute_step_discounted_returns(batch: DataProto, gamma: float):
 
 def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
                                    step_rewards: torch.Tensor,
-                                   eos_mask: torch.Tensor,
+                                   response_mask: torch.Tensor,
                                    anchor_obs: np.array,
                                    index: np.array,
+                                   traj_index: np.array,
                                    epsilon: float = 1e-6,
                                    step_advantage_w: float = 1.0,
                                    mode: str = "mean_norm"
@@ -109,21 +110,22 @@ def compute_gigpo_outcome_advantage(token_level_rewards: torch.Tensor,
         raise ValueError(f"Unknown mode: {mode}")
     
     # Compute episode-level group reward
-    episode_advantages = episode_norm_reward(token_level_rewards, eos_mask, index, epsilon, remove_std)
+    episode_advantages = episode_norm_reward(token_level_rewards, response_mask, index, traj_index, epsilon, remove_std)
     
     # Compute step_group_uids
     step_group_uids = build_step_group(anchor_obs, index)
 
     # Compute step-level group reward
-    step_advantages = step_norm_reward(step_rewards, eos_mask, step_group_uids, epsilon, remove_std)
+    step_advantages = step_norm_reward(step_rewards, response_mask, step_group_uids, epsilon, remove_std)
 
     scores = episode_advantages + step_advantage_w * step_advantages
     return scores, scores
 
 
 def episode_norm_reward(token_level_rewards: torch.Tensor,
-                        eos_mask: torch.Tensor,
+                        response_mask: torch.Tensor,
                         index: np.array,
+                        traj_index: np.array,
                         epsilon: float = 1e-6,
                         remove_std: bool = True,
                         ):
@@ -133,8 +135,16 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
     Args:
         token_level_rewards: `(torch.Tensor)`
             shape: (bs, response_length)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
+        index: `(np.array)`
+            shape: (bs,)
+        traj_index: `(np.array)`
+            shape: (bs,)
+        epsilon: float
+            A small value to avoid division by zero.
+        remove_std: bool
+            If True, the standard deviation is removed from the normalization.
     
     Returns:
         advantages: `(torch.Tensor)`
@@ -148,11 +158,15 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
     id2score = defaultdict(list)
     id2mean = {}
     id2std = {}
-
+    seen_pairs = set()
     with torch.no_grad():
         bsz = scores.shape[0]
         for i in range(bsz):
+            if (index[i], traj_index[i]) in seen_pairs:
+                continue
             id2score[index[i]].append(scores[i])
+            seen_pairs.add((index[i], traj_index[i]))
+
         for idx in id2score:
             if len(id2score[idx]) == 1:
                 id2mean[idx] = torch.tensor(0.0)
@@ -167,7 +181,7 @@ def episode_norm_reward(token_level_rewards: torch.Tensor,
                 scores[i] = scores[i] - id2mean[index[i]]
             else:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-        episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        episode_advantages = scores.unsqueeze(-1).tile([1, response_length]) * response_mask
 
     return episode_advantages
 
@@ -231,7 +245,7 @@ def build_step_group(anchor_obs: np.array, index: np.array, summarize: bool = Fa
 
 
 def step_norm_reward(step_rewards: torch.Tensor,
-                      eos_mask: torch.Tensor,
+                      response_mask: torch.Tensor,
                       index: np.array,
                       epsilon: float = 1e-6,
                       remove_std: bool = True,
@@ -241,7 +255,7 @@ def step_norm_reward(step_rewards: torch.Tensor,
     Args:
         step_rewards: `(torch.Tensor)`
             shape: (bs,)
-        eos_mask: `(torch.Tensor)`
+        response_mask: `(torch.Tensor)`
             shape: (bs, response_length)
     
     Returns:
@@ -250,7 +264,7 @@ def step_norm_reward(step_rewards: torch.Tensor,
         Returns: `(torch.Tensor)`
             shape: (bs, response_length)
     """
-    response_length = eos_mask.shape[-1]
+    response_length = response_mask.shape[-1]
     scores = step_rewards.clone()
 
     id2score = defaultdict(list)
@@ -278,7 +292,7 @@ def step_norm_reward(step_rewards: torch.Tensor,
                 scores[i] = scores[i] - id2mean[index[i]]
             else:
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
-        step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * eos_mask
+        step_advantages = scores.unsqueeze(-1).tile([1, response_length]) * response_mask
     
     return step_advantages
 
