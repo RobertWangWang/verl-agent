@@ -1,78 +1,77 @@
 import os
 import numpy as np
-import torch.multiprocessing as mp
+import ray
 import sys
 
 from appworld import AppWorld, load_task_ids, update_root
 
 update_root(os.path.join(os.path.dirname(__file__), "appworld"))
 
-def worker_func(remote, id, max_interactions):
+@ray.remote(num_cpus=0.25)
+class AppWorldWorker:
     """
-    Core loop for the subprocess. This actually holds an instance of AppWorld
-    and operates the environment based on commands sent from the main process
-    (such as 'step', 'reset', 'close', etc.), then returns the results.
+    Ray Actor that holds an instance of AppWorld and operates the environment
+    based on method calls from the main process.
     """
-    env = None
-    current_step_count = 0
+    def __init__(self, worker_id, max_interactions):
+        self.env = None
+        self.current_step_count = 0
+        self.max_interactions = max_interactions
+        self.worker_id = worker_id
+        
+        self.url_id = 8000 + worker_id
+        self.url = f"http://0.0.0.0:{self.url_id}"
 
-    url_id = 8000 + id
-    url = f"http://0.0.0.0:{url_id}"
+    def reset(self, task_id):
+        """Reset the environment with a new task."""
+        if self.env is not None:
+            self.env.close()
 
-    while True:
-        cmd, data = remote.recv()
-        if cmd == 'reset':
-            if env is not None:
-                env.close()
+        self.current_step_count = 0
 
-            task_id = data
-            current_step_count = 0
+        self.env = AppWorld(
+            task_id=task_id,
+            experiment_name=f'default_{self.worker_id}',
+            remote_environment_url=self.url,
+        )
 
-            env = AppWorld(
-                task_id=task_id,
-                experiment_name=f'default_{id}',
-                remote_environment_url=url,
-            )
+        obs = self.env.task.instruction
+        info = {
+            "task_id": task_id,
+            "supervisor": dict(self.env.task.supervisor),
+        }
+        return obs, info
 
-            obs = env.task.instruction
-            info = {
-                    "task_id": task_id,
-                    "supervisor": dict(env.task.supervisor),
-                    }
-            remote.send((obs, info))
+    def step(self, action):
+        """Execute one step in the environment."""
+        if self.env is None:
+            raise RuntimeError("Environment not reset before step. Please call reset() first.")
 
-        elif cmd == 'step':
-            action = data
-            if env is None:
-                raise RuntimeError("Environment not reset before step. Please call reset() first.")
+        self.current_step_count += 1
 
-            current_step_count += 1
+        obs = self.env.execute(action)
 
-            obs = env.execute(action)
+        done = self.env.task_completed() or (self.current_step_count >= self.max_interactions)
 
-            done = env.task_completed() or (current_step_count >= max_interactions)
+        reward = 10.0 if self.env.task_completed() else 0.0
 
-            reward = 10.0 if env.task_completed() else 0.0
+        info = {
+            "won": self.env.task_completed(),
+            "step_count": self.current_step_count
+        }
 
-            info = {
-                "won": env.task_completed(),
-                "step_count": current_step_count
-            }
+        return obs, reward, done, info
 
-            remote.send((obs, reward, done, info))
-
-        elif cmd == 'close':
-            remote.close()
-            break
-
-        else:
-            raise NotImplementedError(f"Unknown command: {cmd}")
+    def close(self):
+        """Close the environment."""
+        if self.env is not None:
+            self.env.close()
 
 
 class AppWorldEnvs:
     """
-    A multi-process wrapper for AppWorld.
-    - Creates multiple subprocesses, each holding a separate AppWorld instance.
+    A Ray-based distributed wrapper for AppWorld.
+    - Creates multiple Ray actors, each holding a separate AppWorld instance.
     - Implements Gym-style interfaces such as step() / reset() / close().
     """
     def __init__(self, 
@@ -90,53 +89,46 @@ class AppWorldEnvs:
         self.env_num = env_num
         self.group_n = group_n
         self.num_processes = env_num * group_n
-        self.parent_remotes = []
-        self.workers = []
         self.task_ids = load_task_ids(dataset_name)
 
-        if sys.platform.startswith("win"):
-            ctx = mp.get_context('spawn')
-        else:
-            ctx = mp.get_context('fork')
-        
-        for i in range(self.num_processes):
-            parent_remote, child_remote = mp.Pipe()
-            worker = ctx.Process(
-                target=worker_func,
-                args=(child_remote,
-                      start_server_id + i,
-                      self.max_interactions,
-                      )
-            )
-            worker.daemon = True
-            worker.start()
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            ray.init()
 
-            child_remote.close()
-            self.parent_remotes.append(parent_remote)
+        # Create Ray actors (workers)
+        self.workers = []
+        for i in range(self.num_processes):
+            worker = AppWorldWorker.remote(
+                worker_id=start_server_id + i,
+                max_interactions=self.max_interactions
+            )
             self.workers.append(worker)
 
     def step(self, actions):
         """
         actions: Must be a list with length equal to self.num_processes, 
-        each sent to the corresponding subprocess.
+        each sent to the corresponding worker.
         
         Return format follows Gym's step() convention:
             observations, rewards, dones, infos
-            adds:
-            (obs, reward, done, info)
         """
         assert len(actions) == self.num_processes, "The length of actions must match the number of processes."
 
-        for i, remote in enumerate(self.parent_remotes):
-            remote.send(('step', actions[i]))
+        # Send step commands to all workers
+        futures = []
+        for i, worker in enumerate(self.workers):
+            future = worker.step.remote(actions[i])
+            futures.append(future)
 
+        # Collect results
+        results = ray.get(futures)
+        
         obs_list = []
         reward_list = []
         done_list = []
         info_list = []
 
-        for remote in self.parent_remotes:
-            obs, reward, done, info = remote.recv()
+        for obs, reward, done, info in results:
             obs_list.append(obs)
             reward_list.append(reward)
             done_list.append(done)
@@ -146,7 +138,7 @@ class AppWorldEnvs:
 
     def reset(self):
         """
-        Reset all subprocess environments simultaneously, 
+        Reset all worker environments simultaneously, 
         returning each environment's initial observation and info.
         """
         # randomly select self.env_num task_id from self.task_ids
@@ -154,26 +146,38 @@ class AppWorldEnvs:
         # repeat task_id group_n times
         task_id = np.repeat(task_id, self.group_n).tolist()
 
-        for i, remote in enumerate(self.parent_remotes):
-            remote.send(('reset', task_id[i]))
+        # Send reset commands to all workers
+        futures = []
+        for i, worker in enumerate(self.workers):
+            future = worker.reset.remote(task_id[i])
+            futures.append(future)
 
-        obs_list = []
+        # Collect results
+        results = ray.get(futures)
         
+        obs_list = []
         info_list = []
 
-        for remote in self.parent_remotes:
-            obs, info = remote.recv()
+        for obs, info in results:
             obs_list.append(obs)
             info_list.append(info)
 
         return obs_list, info_list
 
     def close(self):
-        """Close all subprocesses."""
-        for remote in self.parent_remotes:
-            remote.send(('close', None))
+        """Close all workers."""
+        # Send close commands to all workers
+        futures = []
         for worker in self.workers:
-            worker.join()
+            future = worker.close.remote()
+            futures.append(future)
+        
+        # Wait for all workers to close
+        ray.get(futures)
+        
+        # Shutdown Ray actors
+        for worker in self.workers:
+            ray.kill(worker)
 
     def render(self):
         """Implement this if visualization is needed."""

@@ -1,50 +1,40 @@
-import torch.multiprocessing as mp
+import ray
 import gym
 from agent_system.environments.env_package.sokoban.sokoban import SokobanEnv
 import numpy as np
-import sys
 
-def _worker(remote, mode, env_kwargs):
+@ray.remote(num_cpus=0.25)
+class SokobanWorker:
     """
-    Core loop for each subprocess. 
-    Each subprocess holds its own independent instance of SokobanEnv.
-    It receives instructions (cmd, data) from the main process,
-    executes the corresponding environment operations, and sends back the result.
+    Ray remote actor that replaces the worker function.
+    Each actor holds its own independent instance of SokobanEnv.
     """
-    env = SokobanEnv(mode, **env_kwargs)
-
-    while True:
-        cmd, data = remote.recv()
-        if cmd == 'step':
-            action = data
-            obs, reward, done, info = env.step(action)
-
-            remote.send((obs, reward, done, info))
-
-        elif cmd == 'reset':
-            seed_for_reset = data
-            obs, info = env.reset(seed=seed_for_reset)
-
-            remote.send((obs, info))
-
-        elif cmd == 'render':
-            mode_for_render = data
-            rendered = env.render(mode=mode_for_render)
-            remote.send(rendered)
-
-        elif cmd == 'close':
-            remote.close()
-            break
-
-        else:
-            raise NotImplementedError(f"Unknown command: {cmd}")
+    
+    def __init__(self, mode, env_kwargs):
+        """Initialize the Sokoban environment in this worker"""
+        self.env = SokobanEnv(mode, **env_kwargs)
+    
+    def step(self, action):
+        """Execute a step in the environment"""
+        obs, reward, done, info = self.env.step(action)
+        return obs, reward, done, info
+    
+    def reset(self, seed_for_reset):
+        """Reset the environment with given seed"""
+        obs, info = self.env.reset(seed=seed_for_reset)
+        return obs, info
+    
+    def render(self, mode_for_render):
+        """Render the environment"""
+        rendered = self.env.render(mode=mode_for_render)
+        return rendered
 
 
 class SokobanMultiProcessEnv(gym.Env):
     """
-    Multi-process wrapper for the Sokoban environment.
-    Each subprocess creates an independent SokobanEnv instance.
-    The main process communicates with subprocesses via Pipe to collect step/reset results.
+    Ray-based wrapper for the Sokoban environment.
+    Each Ray actor creates an independent SokobanEnv instance.
+    The main process communicates with Ray actors to collect step/reset results.
     """
 
     def __init__(self,
@@ -62,6 +52,10 @@ class SokobanMultiProcessEnv(gym.Env):
         """
         super().__init__()
 
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            ray.init()
+
         self.is_train = is_train
         self.group_n = group_n
         self.env_num = env_num
@@ -72,26 +66,10 @@ class SokobanMultiProcessEnv(gym.Env):
         if env_kwargs is None:
             env_kwargs = {}
 
-
-        self.parent_remotes = []
+        # Create Ray remote actors instead of processes
         self.workers = []
-
-        if sys.platform.startswith("win"):
-            ctx = mp.get_context('spawn')
-        else:
-            ctx = mp.get_context('fork')
-
         for i in range(self.num_processes):
-            parent_remote, child_remote = mp.Pipe()
-            worker = ctx.Process(
-                target=_worker,
-                args=(child_remote, self.mode, env_kwargs)
-            )
-            worker.daemon = True
-            worker.start()
-            child_remote.close()
-
-            self.parent_remotes.append(parent_remote)
+            worker = SokobanWorker.remote(self.mode, env_kwargs)
             self.workers.append(worker)
 
     def step(self, actions):
@@ -104,12 +82,16 @@ class SokobanMultiProcessEnv(gym.Env):
         """
         assert len(actions) == self.num_processes
 
-        for remote, action in zip(self.parent_remotes, actions):
-            remote.send(('step', action))
+        # Send step commands to all workers
+        futures = []
+        for worker, action in zip(self.workers, actions):
+            future = worker.step.remote(action)
+            futures.append(future)
 
+        # Collect results
+        results = ray.get(futures)
         obs_list, reward_list, done_list, info_list = [], [], [], []
-        for remote in self.parent_remotes:
-            obs, reward, done, info = remote.recv()
+        for obs, reward, done, info in results:
             obs_list.append(obs)
             reward_list.append(reward)
             done_list.append(done)
@@ -131,40 +113,46 @@ class SokobanMultiProcessEnv(gym.Env):
         # repeat the seeds for each group
         seeds = np.repeat(seeds, self.group_n)
         seeds = seeds.tolist()
-        for i, remote in enumerate(self.parent_remotes):
-            remote.send(('reset', seeds[i]))
 
+        # Send reset commands to all workers
+        futures = []
+        for i, worker in enumerate(self.workers):
+            future = worker.reset.remote(seeds[i])
+            futures.append(future)
+
+        # Collect results
+        results = ray.get(futures)
         obs_list = []
         info_list = []
-        for remote in self.parent_remotes:
-            obs, info = remote.recv()
+        for obs, info in results:
             obs_list.append(obs)
             info_list.append(info)
         return obs_list, info_list
 
     def render(self, mode='rgb_array', env_idx=None):
         """
-        Request rendering from subprocess environments.
+        Request rendering from Ray actor environments.
         Can specify env_idx to get render result from a specific environment,
         otherwise returns a list from all environments.
         """
         if env_idx is not None:
-            self.parent_remotes[env_idx].send(('render', mode))
-            return self.parent_remotes[env_idx].recv()
+            future = self.workers[env_idx].render.remote(mode)
+            return ray.get(future)
         else:
-            for remote in self.parent_remotes:
-                remote.send(('render', mode))
-            results = [remote.recv() for remote in self.parent_remotes]
+            futures = []
+            for worker in self.workers:
+                future = worker.render.remote(mode)
+                futures.append(future)
+            results = ray.get(futures)
             return results
 
     def close(self):
         """
-        Close all subprocesses
+        Close all Ray actors
         """
-        for remote in self.parent_remotes:
-            remote.send(('close', None))
+        # Kill all Ray actors
         for worker in self.workers:
-            worker.join()
+            ray.kill(worker)
 
     def __del__(self):
         self.close()

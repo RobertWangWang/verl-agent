@@ -4,9 +4,8 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import torch
-import torch.multiprocessing as mp
 import torchvision.transforms as T
-import sys
+import ray
 
 from agent_system.environments.env_package.alfworld.alfworld.agents.environment import get_environment
 
@@ -38,47 +37,45 @@ def compute_reward(info, multi_modal=False):
         reward = 10.0 * float(info['won'])
     return reward
 
-def worker_func(remote, config, seed, base_env):
+@ray.remote(num_cpus=0.25)
+class AlfworldWorker:
     """
-    Core loop of the subprocess:
-    1. Create the actual environment object here and keep it in this process.
-    2. Continuously receive commands (cmd, data) from the pipe using remote.recv(),
-       then perform the corresponding env operation.
-    3. Send the result back to the main process using remote.send(...).
+    Ray remote actor that replaces the worker function.
+    Each actor holds one environment instance.
     """
-
-    env = base_env.init_env(batch_size=1) # Each worker holds only one sub-environment
-    env.seed(seed) 
-
-    while True:
-        cmd, data = remote.recv()
-        if cmd == 'step':
-            actions = [data] 
-            
-            obs, scores, dones, infos = env.step(actions)
-            infos['observation_text'] = obs
-            remote.send((obs, scores, dones, infos))
-
-        elif cmd == 'reset':
-            obs, infos = env.reset()
-            infos['observation_text'] = obs
-            remote.send((obs, infos))
-
-        elif cmd == 'getobs':
-            image = get_obs_image(env)
-            image = image.cpu()  
-            remote.send(image)
-
-        elif cmd == 'close':
-            remote.close()
-            break
-
-        else:
-            raise NotImplementedError("Unknown command: {}".format(cmd))
+    
+    def __init__(self, config, seed, base_env):
+        self.env = base_env.init_env(batch_size=1)  # Each worker holds only one sub-environment
+        self.env.seed(seed)
+    
+    def step(self, action):
+        """Execute a step in the environment"""
+        actions = [action] 
+        
+        obs, scores, dones, infos = self.env.step(actions)
+        infos['observation_text'] = obs
+        return obs, scores, dones, infos
+    
+    def reset(self):
+        """Reset the environment"""
+        obs, infos = self.env.reset()
+        infos['observation_text'] = obs
+        return obs, infos
+    
+    def getobs(self):
+        """Get current observation image"""
+        image = get_obs_image(self.env)
+        image = image.cpu()  
+        return image
 
 class AlfworldEnvs(gym.Env):
     def __init__(self, alf_config_path, seed=0, env_num=1, group_n=1, is_train=True):
         super().__init__()
+        
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            ray.init()
+            
         config = load_config_file(alf_config_path)
         env_type = config['env']['type']
         base_env = get_environment(env_type)(config, train_eval='train' if is_train else 'eval_in_distribution')
@@ -86,26 +83,10 @@ class AlfworldEnvs(gym.Env):
         self.num_processes = env_num * group_n
         self.group_n = group_n
 
-        self.parent_remotes = []
+        # Create Ray remote actors instead of processes
         self.workers = []
-
-        if sys.platform.startswith("win"):
-            ctx = mp.get_context('spawn')
-        else:
-            ctx = mp.get_context('fork')
-
         for i in range(self.num_processes):
-            parent_remote, child_remote = mp.Pipe()
-            worker = ctx.Process(
-                target=worker_func,
-                args=(child_remote, config, seed + (i // self.group_n), base_env)
-            )
-            worker.daemon = True
-            worker.start()
-
-            child_remote.close()
-
-            self.parent_remotes.append(parent_remote)
+            worker = AlfworldWorker.remote(config, seed + (i // self.group_n), base_env)
             self.workers.append(worker)
 
         self.prev_admissible_commands = [None for _ in range(self.num_processes)]
@@ -114,17 +95,21 @@ class AlfworldEnvs(gym.Env):
         assert len(actions) == self.num_processes, \
             "The num of actions must be equal to the num of processes"
 
-        for i, remote in enumerate(self.parent_remotes):
-            remote.send(('step', actions[i]))
+        # Send step commands to all workers
+        futures = []
+        for i, worker in enumerate(self.workers):
+            future = worker.step.remote(actions[i])
+            futures.append(future)
 
+        # Collect results
         text_obs_list = []
         image_obs_list = []
         rewards_list = []
         dones_list = []
         info_list = []
 
-        for i, remote in enumerate(self.parent_remotes):
-            obs, scores, dones, info = remote.recv()
+        results = ray.get(futures)
+        for i, (obs, scores, dones, info) in enumerate(results):
             for k in info.keys():
                 info[k] = info[k][0]
 
@@ -144,17 +129,21 @@ class AlfworldEnvs(gym.Env):
 
     def reset(self):
         """
-        Send the reset command to all subprocesses at once and collect initial obs/info from each environment.
+        Send the reset command to all workers at once and collect initial obs/info from each environment.
         """
         text_obs_list = []
         image_obs_list = []
         info_list = []
 
-        for remote in self.parent_remotes:
-            remote.send(('reset', None))
+        # Send reset commands to all workers
+        futures = []
+        for worker in self.workers:
+            future = worker.reset.remote()
+            futures.append(future)
 
-        for i, remote in enumerate(self.parent_remotes):
-            obs, info = remote.recv()
+        # Collect results
+        results = ray.get(futures)
+        for i, (obs, info) in enumerate(results):
             for k in info.keys():
                 info[k] = info[k][0] 
             text_obs_list.append(obs[0])
@@ -170,16 +159,15 @@ class AlfworldEnvs(gym.Env):
 
     def getobs(self):
         """
-        Ask each subprocess to return its current frame image.
+        Ask each worker to return its current frame image.
         Usually needed only for multi-modal environments; otherwise can return None.
         """
-        images = []
-        for remote in self.parent_remotes:
-            remote.send(('getobs', None))
+        futures = []
+        for worker in self.workers:
+            future = worker.getobs.remote()
+            futures.append(future)
 
-        for remote in self.parent_remotes:
-            img = remote.recv()
-            images.append(img)
+        images = ray.get(futures)
         return images
 
     @property
@@ -192,12 +180,11 @@ class AlfworldEnvs(gym.Env):
 
     def close(self):
         """
-        Close all subprocesses
+        Close all workers
         """
-        for remote in self.parent_remotes:
-            remote.send(('close', None))
+        # Kill all Ray actors
         for worker in self.workers:
-            worker.join()
+            ray.kill(worker)
 
 def build_alfworld_envs(alf_config_path, seed, env_num, group_n, is_train=True):
     return AlfworldEnvs(alf_config_path, seed, env_num, group_n, is_train)

@@ -714,7 +714,7 @@ if __name__ == "__main__":
         env_kwargs = {
                     'observation_mode': 'text', 
                     'num_products': None, 
-                    'human_goals': True,
+                    'human_goals': False,
                     'file_path': file_path,
                     'attr_path': attr_path
                     }

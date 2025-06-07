@@ -1,95 +1,77 @@
-import torch.multiprocessing as mp
+import ray
 import gym
 import numpy as np
 
 # -----------------------------------------------------------------------------
-# Single worker process --------------------------------------------------------
+# Ray remote worker actor -----------------------------------------------------
 # -----------------------------------------------------------------------------
 
-def _worker(remote, seed, env_kwargs):
-    """Core loop for a subprocess that hosts a *WebAgentTextEnv* instance.
-
-    Commands sent from the main process are *(cmd, data)* tuples:
-
-    - **'step'** *(str)*  → returns ``(obs, reward, done, info)`` where
-      ``info['available_actions']`` has already been populated *after* the step.
-    - **'reset'** *(int | None)* → returns ``(obs, info)`` with the same
-      ``available_actions`` field (obtained immediately after reset).
-    - **'render'** *(str)* → returns the value of ``env.render(mode)``.
-    - **'available_actions'** *(None)* → returns the list from
-      ``env.get_available_actions()``.
-    - **'close'** → terminates the subprocess.
+@ray.remote(num_cpus=0.25)
+class WebshopWorker:
+    """Ray remote actor that replaces the worker function.
+    Each actor hosts a *WebAgentTextEnv* instance.
     """
-    # Lazy import avoids CUDA initialisation issues under ``spawn``.
-    import sys
-    import os
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webshop'))
-    sys.path.append(project_root)
-    from web_agent_site.envs import WebAgentTextEnv  # noqa: WPS433 (runtime import)
-    # env_kwargs['seed'] = seed
-    env = gym.make('WebAgentTextEnv-v0', **env_kwargs)
+    
+    def __init__(self, seed, env_kwargs):
+        # Lazy import avoids CUDA initialisation issues
+        import sys
+        import os
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webshop'))
+        sys.path.append(project_root)
+        from web_agent_site.envs import WebAgentTextEnv  # noqa: WPS433 (runtime import)
+        
+        # env_kwargs['seed'] = seed
+        self.env = gym.make('WebAgentTextEnv-v0', **env_kwargs)
+    
+    def step(self, action):
+        """Execute a step in the environment"""
+        obs, reward, done, info = self.env.step(action)
+        info = dict(info or {})  # make a *copy* so we can mutate safely
+        info['available_actions'] = self.env.get_available_actions()
+        info['task_score'] = reward
 
-    try:
-        while True:
-            cmd, data = remote.recv()
+        # Redefine reward. We only use rule-based reward - win for 10, lose for 0.
+        if done and reward == 1.0:
+            info['won'] = True
+            reward = 10.0
+        else:
+            info['won'] = False
+            reward = 0
 
-            # -----------------------------------------------------------------
-            # Environment interaction commands
-            # -----------------------------------------------------------------
-            if cmd == 'step':
-                action = data
-                obs, reward, done, info = env.step(action)
-                info = dict(info or {})  # make a *copy* so we can mutate safely
-                info['available_actions'] = env.get_available_actions()
-                info['task_score'] = reward
-
-                # Redefine reward. We only use rule-based reward - win for 10, lose for 0.
-                if done and reward == 1.0:
-                    info['won'] = True
-                    reward = 10.0
-                else:
-                    info['won'] = False
-                    reward = 0
-
-                remote.send((obs, reward, done, info))
-
-            elif cmd == 'reset':
-                idx = data
-                obs, info = env.reset(session=idx)
-                info = dict(info or {})
-                info['available_actions'] = env.get_available_actions()
-                info['won'] = False
-                remote.send((obs, info))
-
-            elif cmd == 'render':
-                mode_for_render = data
-                rendered = env.render(mode=mode_for_render)
-                remote.send(rendered)
-
-            elif cmd == 'available_actions':
-                remote.send(env.get_available_actions())
-            elif cmd == 'get_goals':
-                remote.send(env.server.goals)
-            # -----------------------------------------------------------------
-            # Book‑keeping
-            # -----------------------------------------------------------------
-            elif cmd == 'close':
-                remote.close()
-                break
-
-            else:  # pragma: no cover – helps catch typos early
-                raise NotImplementedError(f"Unknown command sent to worker: {cmd}")
-
-    finally:  # Ensure the underlying environment *always* shuts down cleanly
-        env.close()
+        return obs, reward, done, info
+    
+    def reset(self, idx):
+        """Reset the environment with given session index"""
+        obs, info = self.env.reset(session=idx)
+        info = dict(info or {})
+        info['available_actions'] = self.env.get_available_actions()
+        info['won'] = False
+        return obs, info
+    
+    def render(self, mode_for_render):
+        """Render the environment"""
+        rendered = self.env.render(mode=mode_for_render)
+        return rendered
+    
+    def get_available_actions(self):
+        """Get available actions"""
+        return self.env.get_available_actions()
+    
+    def get_goals(self):
+        """Get environment goals"""
+        return self.env.server.goals
+    
+    def close(self):
+        """Close the environment"""
+        self.env.close()
 
 
 # -----------------------------------------------------------------------------
-# Vectorised multi‑process environment -----------------------------------------
+# Vectorised Ray environment --------------------------------------------------
 # -----------------------------------------------------------------------------
 
 class WebshopMultiProcessEnv(gym.Env):
-    """A vectorised, multi‑process wrapper around *WebAgentTextEnv*.
+    """A vectorised, Ray-based wrapper around *WebAgentTextEnv*.
 
     ``info`` dictionaries returned by :py:meth:`step` **and** :py:meth:`reset`
     automatically contain the key ``'available_actions'`` so downstream RL code
@@ -105,6 +87,10 @@ class WebshopMultiProcessEnv(gym.Env):
     ) -> None:
         super().__init__()
 
+        # Initialize Ray if not already initialized
+        if not ray.is_initialized():
+            ray.init()
+
         self.group_n = group_n
         self.env_num = env_num
         self.num_processes = env_num * group_n
@@ -114,28 +100,16 @@ class WebshopMultiProcessEnv(gym.Env):
 
         self._env_kwargs = env_kwargs if env_kwargs is not None else {'observation_mode': 'text', 'num_products': None}
 
-        # -------------------------- Multiprocessing setup --------------------
-        self._parent_remotes: list[mp.connection.Connection] = []
-        self._workers: list[mp.Process] = []
-
-        ctx = mp.get_context('spawn')
+        # -------------------------- Ray actors setup --------------------------
+        self._workers = []
 
         for i in range(self.num_processes):
-            parent_remote, child_remote = mp.Pipe()
-            worker = ctx.Process(
-                target=_worker,
-                args=(child_remote, seed + (i // self.group_n), self._env_kwargs),
-            )
-            worker.daemon = True  # auto‑kill if the main process crashes
-            worker.start()
-            child_remote.close()
-
-            self._parent_remotes.append(parent_remote)
+            worker = WebshopWorker.remote(seed + (i // self.group_n), self._env_kwargs)
             self._workers.append(worker)
 
-
-        self._parent_remotes[0].send(('get_goals', None))
-        goals = self._parent_remotes[0].recv()
+        # Get goals from the first worker
+        goals_future = self._workers[0].get_goals.remote()
+        goals = ray.get(goals_future)
 
         # ------- original ----------#
         # if args.num is None:
@@ -165,12 +139,16 @@ class WebshopMultiProcessEnv(gym.Env):
                 f'Expected {self.num_processes} actions, got {len(actions)}',
             )
 
-        for remote, action in zip(self._parent_remotes, actions):
-            remote.send(('step', action))
+        # Send step commands to all workers
+        futures = []
+        for worker, action in zip(self._workers, actions):
+            future = worker.step.remote(action)
+            futures.append(future)
 
+        # Collect results
+        results = ray.get(futures)
         obs_list, reward_list, done_list, info_list = [], [], [], []
-        for remote in self._parent_remotes:
-            obs, reward, done, info = remote.recv()
+        for obs, reward, done, info in results:
             obs_list.append(obs)
             reward_list.append(reward)
             done_list.append(done)
@@ -182,12 +160,16 @@ class WebshopMultiProcessEnv(gym.Env):
         idx = self._rng.choice(self.goal_idxs, size=self.env_num, replace=False)
         idx = np.repeat(idx, self.group_n).tolist()
 
-        for remote, i in zip(self._parent_remotes, idx):
-            remote.send(('reset', i))
+        # Send reset commands to all workers
+        futures = []
+        for worker, i in zip(self._workers, idx):
+            future = worker.reset.remote(i)
+            futures.append(future)
 
+        # Collect results
+        results = ray.get(futures)
         obs_list, info_list = [], []
-        for remote in self._parent_remotes:
-            obs, info = remote.recv()
+        for obs, info in results:
             obs_list.append(obs)
             info_list.append(info)
 
@@ -199,12 +181,15 @@ class WebshopMultiProcessEnv(gym.Env):
 
     def render(self, mode: str = 'text', env_idx: int = None):
         if env_idx is not None:
-            self._parent_remotes[env_idx].send(('render', mode))
-            return self._parent_remotes[env_idx].recv()
+            future = self._workers[env_idx].render.remote(mode)
+            return ray.get(future)
 
-        for remote in self._parent_remotes:
-            remote.send(('render', mode))
-        return [remote.recv() for remote in self._parent_remotes]
+        futures = []
+        for worker in self._workers:
+            future = worker.render.remote(mode)
+            futures.append(future)
+        
+        return ray.get(futures)
 
     # ------------------------------------------------------------------
     # Clean‑up ----------------------------------------------------------
@@ -214,10 +199,19 @@ class WebshopMultiProcessEnv(gym.Env):
         if getattr(self, '_closed', False):
             return
 
-        for remote in self._parent_remotes:
-            remote.send(('close', None))
+        # Close all workers and kill Ray actors
+        close_futures = []
         for worker in self._workers:
-            worker.join()
+            future = worker.close.remote()
+            close_futures.append(future)
+        
+        # Wait for all workers to close
+        ray.get(close_futures)
+        
+        # Kill all Ray actors
+        for worker in self._workers:
+            ray.kill(worker)
+            
         self._closed = True
 
     def __del__(self):  # noqa: D401
@@ -243,4 +237,3 @@ def build_webshop_envs(
         is_train=is_train,
         env_kwargs=env_kwargs,
     )
-
