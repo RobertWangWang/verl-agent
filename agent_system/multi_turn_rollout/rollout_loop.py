@@ -117,7 +117,7 @@ class TrajectoryCollector:
                                                                             max_length=self.config.data.max_prompt_length,
                                                                             pad_token_id=self.tokenizer.pad_token_id,
                                                                             left_pad=True,
-                                                                            truncation='error')
+                                                                            truncation=self.config.data.truncation,)
         
         
 
