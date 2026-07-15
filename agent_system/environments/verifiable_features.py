@@ -82,6 +82,13 @@ class BaseFeatureExtractor(ABC):
         """
         pass
 
+    def verify_score(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> float:
+        """
+        验证的连续分数版本 (0-1)，用于支持部分分的特征 (如集合 F1，v0.2 §7.1)。
+        默认实现: bool verify 的 0/1 化。compute_reward 走这个接口。
+        """
+        return float(self.verify(predicted, actual))
+
 
 class ALFWorldObjectSeenFeature(BaseFeatureExtractor):
     """
@@ -360,6 +367,109 @@ class ALFWorldTaskProgressFeature(BaseFeatureExtractor):
         return pred_won == actual_won
 
 
+# ---------------------------------------------------------------------------
+# v0.2 schema 级特征 (任务无关抽取协议, docs/ps_grpo_integration_design.md §7.1)
+# 抽取只依赖环境本体 (ALFWORLD_OBJECT_VOCAB = schema),不依赖任何任务语义,
+# 同一环境的所有任务共享同一 Φ。
+# ---------------------------------------------------------------------------
+
+_SEEN_LIST_RE = re.compile(r'you see (.*?)(?:\.|$)', re.IGNORECASE)
+
+
+def _extract_seen_objects(observation: str, vocab: Set[str]) -> Set[str]:
+    """从 "you see a ladle 1 and a knife 2" 抽取词表内的物体类型集合 (schema 级)"""
+    seen: Set[str] = set()
+    for match in _SEEN_LIST_RE.finditer(observation.lower()):
+        segment = match.group(1)
+        if 'nothing' in segment:
+            continue
+        for token in re.findall(r'[a-z]+', segment):
+            if token in vocab:
+                seen.add(token)
+    return seen
+
+
+class ALFWorldObjectsVisibleFeature(BaseFeatureExtractor):
+    """
+    schema 级布尔特征: 下一观测是否列出至少一个物体 ("you see ..." 非空)。
+    predict 块字段: objects_visible (取代任务语义的 target_visible)。
+    """
+
+    feature_type = 'objects_visible'
+
+    def __init__(self, vocab: Set[str] = None):
+        self.vocab = vocab if vocab is not None else ALFWORLD_OBJECT_VOCAB
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        seen = _extract_seen_objects(observation, self.vocab)
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'seen': sorted(seen)})
+
+    def verify(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> bool:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        actual_visible = bool(actual.value.get('seen'))
+        return bool(predicted.value.get('visible')) == actual_visible
+
+
+class ALFWorldVisibleObjectsF1Feature(BaseFeatureExtractor):
+    """
+    schema 级开放集特征: 预测下一观测会看到哪些物体类型,F1 计分 (部分分)。
+    S4b 阶段仅记日志 (权重 0),作为 graded 预测探针 (v0.2 §7.2)。
+    """
+
+    feature_type = 'visible_objects'
+
+    def __init__(self, vocab: Set[str] = None):
+        self.vocab = vocab if vocab is not None else ALFWORLD_OBJECT_VOCAB
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        seen = _extract_seen_objects(observation, self.vocab)
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'objects': sorted(seen)})
+
+    def verify(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> bool:
+        return self.verify_score(predicted, actual) == 1.0
+
+    def verify_score(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> float:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        pred = set(predicted.value.get('objects', []))
+        act = set(actual.value.get('objects', []))
+        if not pred and not act:
+            return 1.0
+        if not pred or not act:
+            return 0.0
+        tp = len(pred & act)
+        precision = tp / len(pred)
+        recall = tp / len(act)
+        if precision + recall == 0:
+            return 0.0
+        return 2 * precision * recall / (precision + recall)
+
+
+class ALFWorldReceptacleStateFeature(BaseFeatureExtractor):
+    """
+    schema 级容器状态特征: (receptacle, open/closed) 二元组集合。
+    predict 块暂不预测它 (不参与奖励),进特征池供覆盖度/探针使用 (v0.2 §7.1/§7.3)。
+    """
+
+    feature_type = 'receptacle_state'
+
+    STATE_RE = re.compile(r'the ([a-z]+) \d+ is (open|closed)', re.IGNORECASE)
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        pairs = sorted({(m.group(1).lower(), m.group(2).lower())
+                        for m in self.STATE_RE.finditer(observation)})
+        return VerifiableFeature(feature_type=self.feature_type, value={'pairs': pairs})
+
+    def verify(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> bool:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        return set(map(tuple, predicted.value.get('pairs', []))) <= \
+            set(map(tuple, actual.value.get('pairs', [])))
+
+
 class CompositeFeatureExtractor:
     """
     组合特征提取器
@@ -428,14 +538,15 @@ class CompositeFeatureExtractor:
         Returns:
             float: 综合分数 (0-1)
         """
-        verification_results = self.verify_all(predicted_features, actual_features)
-
         total_weight = 0.0
         weighted_score = 0.0
 
+        # 走 verify_score (连续分) 而非 verify (布尔): 支持 F1 类部分分特征 (v0.2 §7.1)
         for extractor, weight in self.extractors:
-            if extractor.feature_type in verification_results:
-                weighted_score += weight * float(verification_results[extractor.feature_type])
+            ft = extractor.feature_type
+            if ft in predicted_features and ft in actual_features:
+                score = extractor.verify_score(predicted_features[ft], actual_features[ft])
+                weighted_score += weight * score
                 total_weight += weight
 
         if total_weight > 0:
@@ -524,11 +635,21 @@ def parse_predict_block(text: str) -> Optional[Dict[str, Any]]:
 
         if key == 'next_location':
             parsed['next_location'] = None if value in _NONE_VALUES else value
-        elif key == 'target_visible':
+        elif key in ('target_visible', 'objects_visible'):
+            # target_visible = v0.1 任务语义 (legacy); objects_visible = v0.2 schema 语义
             if value in _YES_VALUES:
-                parsed['target_visible'] = True
+                parsed[key] = True
             elif value in _NO_VALUES:
-                parsed['target_visible'] = False
+                parsed[key] = False
+        elif key == 'visible_objects':
+            # 开放集预测: "ladle, knife" / "[ladle, knife]" / "none"
+            cleaned = value.strip('[]')
+            if cleaned in _NONE_VALUES:
+                parsed['visible_objects'] = []
+            else:
+                objs = [t for t in re.findall(r'[a-z]+', cleaned)
+                        if t in ALFWORLD_OBJECT_VOCAB]
+                parsed['visible_objects'] = sorted(set(objs))
         elif key == 'task_done':
             if value in _YES_VALUES:
                 parsed['task_done'] = True
@@ -552,11 +673,52 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
         features['object_seen'] = VerifiableFeature(
             feature_type='object_seen', value={'visible': parsed['target_visible']}
         )
+    if 'objects_visible' in parsed:
+        features['objects_visible'] = VerifiableFeature(
+            feature_type='objects_visible', value={'visible': parsed['objects_visible']}
+        )
+    if 'visible_objects' in parsed:
+        features['visible_objects'] = VerifiableFeature(
+            feature_type='visible_objects', value={'objects': parsed['visible_objects']}
+        )
     if 'task_done' in parsed:
         features['task_progress'] = VerifiableFeature(
             feature_type='task_progress', value={'won': parsed['task_done']}
         )
     return features
+
+
+def create_alfworld_schema_extractor(
+    feature_weights: Dict[str, float] = None
+) -> CompositeFeatureExtractor:
+    """
+    v0.2 特征协议 (schema 级、任务无关) 的 ALFWorld 组合提取器。
+
+    与 create_alfworld_feature_extractor (v0.1, task_targets) 的区别:
+    - 无 per-task 目标物体集,词表 = 环境本体 ALFWORLD_OBJECT_VOCAB;
+    - objects_visible (布尔) 取代 object_seen (任务语义);
+    - 新增 visible_objects (开放集 F1,默认权重 0 仅日志) 与
+      receptacle_state (不被预测,进特征池供覆盖度/探针)。
+    """
+    if feature_weights is None:
+        feature_weights = {
+            'location_change': 0.5,
+            'objects_visible': 0.5,
+            'visible_objects': 0.0,   # graded 探针,S4b 仅日志
+            'action_available': 0.0,  # predict 块不预测它,永不参与归一化
+            'receptacle_state': 0.0,
+            'task_progress': 0.0,     # 平凡预测,仅日志
+        }
+
+    extractors = [
+        (ALFWorldLocationChangeFeature(), feature_weights.get('location_change', 0.5)),
+        (ALFWorldObjectsVisibleFeature(), feature_weights.get('objects_visible', 0.5)),
+        (ALFWorldVisibleObjectsF1Feature(), feature_weights.get('visible_objects', 0.0)),
+        (ALFWorldActionAvailabilityFeature(), feature_weights.get('action_available', 0.0)),
+        (ALFWorldReceptacleStateFeature(), feature_weights.get('receptacle_state', 0.0)),
+        (ALFWorldTaskProgressFeature(), feature_weights.get('task_progress', 0.0)),
+    ]
+    return CompositeFeatureExtractor(extractors)
 
 
 def create_alfworld_feature_extractor(

@@ -196,6 +196,13 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             if "pred_accuracy" in batch.non_tensor_batch
             else {}
         ),
+        **(
+            {
+                "episode/pred_f1_visible_objects/mean": float(np.asarray(batch.non_tensor_batch["pred_f1_visible_objects"], dtype=np.float32).mean()),
+            }
+            if "pred_f1_visible_objects" in batch.non_tensor_batch
+            else {}
+        ),
     }
     return metrics
 

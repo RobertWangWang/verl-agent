@@ -64,7 +64,14 @@ def fake_projection(text_actions, admissible_commands):
     return actions, valids
 
 
-def make_config(prediction_enable):
+def make_config(prediction_enable, feature_protocol='task_targets', feature_weights='legacy'):
+    if feature_weights == 'legacy':
+        feature_weights = {
+            'object_seen': 0.4,
+            'location_change': 0.4,
+            'action_available': 0.2,
+            'task_progress': 0.0,
+        }
     return OmegaConf.create({
         'env': {
             'env_name': 'alfworld/AlfredTWEnv',
@@ -74,20 +81,18 @@ def make_config(prediction_enable):
                 'prediction': {
                     'enable': prediction_enable,
                     'horizon': 1,
-                    'feature_weights': {
-                        'object_seen': 0.4,
-                        'location_change': 0.4,
-                        'action_available': 0.2,
-                        'task_progress': 0.0,
-                    },
+                    'feature_protocol': feature_protocol,
+                    'feature_weights': feature_weights,
                 },
             },
         },
     })
 
 
-def make_manager(prediction_enable=True):
-    return AlfWorldEnvironmentManager(FakeAlfWorldEnvs(), fake_projection, make_config(prediction_enable))
+def make_manager(prediction_enable=True, feature_protocol='task_targets', feature_weights='legacy'):
+    return AlfWorldEnvironmentManager(
+        FakeAlfWorldEnvs(), fake_projection,
+        make_config(prediction_enable, feature_protocol, feature_weights))
 
 
 def response(predict_block, action):
@@ -233,3 +238,97 @@ class TestProjectionRequireThink:
     def test_relaxed_mode_still_rejects_missing_action(self):
         _, valid = self._project("### Reasoning: no action tag here", require_think=False)
         assert valid == 0
+
+
+# ---------------------------------------------------------------------------
+# v0.2 schema 协议模式 (S4a, docs/ps_grpo_integration_design.md §7)
+# ---------------------------------------------------------------------------
+
+class TestSchemaProtocol:
+    def make(self):
+        return make_manager(prediction_enable=True, feature_protocol='schema',
+                            feature_weights=None)
+
+    def test_shared_task_agnostic_extractor(self):
+        """schema 模式: 所有环境共享同一个 Φ 实例,无 per-task 目标集"""
+        manager = self.make()
+        manager.reset(kwargs=None)
+        assert manager.feature_extractors[0] is manager.feature_extractors[-1]
+        first_extractor = manager.feature_extractors[0].extractors[0][0]
+        assert not hasattr(first_extractor, 'target_objects')
+
+    def test_prompt_uses_schema_predict_fields(self):
+        manager = self.make()
+        obs, _ = manager.reset(kwargs=None)
+        assert 'objects_visible' in obs['text'][0]
+        assert 'visible_objects' in obs['text'][0]
+        assert 'target_visible' not in obs['text'][0]
+
+    def test_correct_schema_prediction(self):
+        manager = self.make()
+        manager.reset(kwargs=None)
+        # 去 cabinet 1 (关着) → 看不到任何物体
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: no; "
+            "visible_objects: none; task_done: no</predict>",
+            "go to cabinet 1")])
+        assert infos[0]['pred_parse_valid'] is True
+        assert infos[0]['pred_accuracy'] == pytest.approx(1.0)
+
+    def test_wrong_objects_visible_partial_score(self):
+        manager = self.make()
+        manager.reset(kwargs=None)
+        # 位置对 (0.5✓), objects_visible 错 (0.5✗) → 0.5
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: yes; task_done: no</predict>",
+            "go to cabinet 1")])
+        assert infos[0]['pred_accuracy'] == pytest.approx(0.5)
+
+    def test_visible_objects_f1_is_logged_not_rewarded(self):
+        """开放集 F1 权重为 0: 预测错物体列表不影响加权准确率"""
+        manager = self.make()
+        manager.reset(kwargs=None)
+        manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: no; task_done: no</predict>",
+            "go to cabinet 1")])
+        # 第二步开柜见 ladle; visible_objects 全错也不扣加权分
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: none; objects_visible: yes; "
+            "visible_objects: fridge, knife; task_done: no</predict>",
+            "open cabinet 1")])
+        assert infos[0]['pred_accuracy'] == pytest.approx(1.0)
+
+    def test_f1_logged_in_info(self):
+        manager = self.make()
+        manager.reset(kwargs=None)
+        manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: no; "
+            "visible_objects: none; task_done: no</predict>",
+            "go to cabinet 1")])
+        # 第二步实际看见 ladle; 预测 [ladle] → F1 = 1.0
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: none; objects_visible: yes; "
+            "visible_objects: ladle; task_done: no</predict>",
+            "open cabinet 1")])
+        assert infos[0]['pred_f1_visible_objects'] == pytest.approx(1.0)
+
+    def test_f1_partial_credit(self):
+        manager = self.make()
+        manager.reset(kwargs=None)
+        manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: no; task_done: no</predict>",
+            "go to cabinet 1")])
+        # 实际 {ladle}; 预测 {ladle, knife} → precision 0.5, recall 1.0 → F1 = 2/3
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: none; objects_visible: yes; "
+            "visible_objects: ladle, knife; task_done: no</predict>",
+            "open cabinet 1")])
+        assert infos[0]['pred_f1_visible_objects'] == pytest.approx(2 / 3)
+
+    def test_f1_absent_field_scores_zero(self):
+        manager = self.make()
+        manager.reset(kwargs=None)
+        _, _, _, infos = manager.step([response(
+            "<predict>next_location: cabinet 1; objects_visible: no; task_done: no</predict>",
+            "go to cabinet 1")])
+        assert infos[0]['pred_f1_visible_objects'] == pytest.approx(0.0)

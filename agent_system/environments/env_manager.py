@@ -24,6 +24,7 @@ from agent_system.environments.base import EnvironmentManagerBase, to_numpy
 from agent_system.environments.prompts import *
 from agent_system.environments.verifiable_features import (
     create_alfworld_feature_extractor,
+    create_alfworld_schema_extractor,
     parse_predict_block,
     prediction_to_features,
     task_target_objects,
@@ -144,6 +145,10 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         pred_cfg = alfworld_cfg.get('prediction', None) if alfworld_cfg is not None else None
         self.pred_enabled = bool(pred_cfg is not None and pred_cfg.get('enable', False))
         if self.pred_enabled:
+            # v0.2 特征协议门控: schema (任务无关,默认) | task_targets (v0.1 兼容)
+            self.feature_protocol = pred_cfg.get('feature_protocol', 'schema')
+            assert self.feature_protocol in ('schema', 'task_targets'), \
+                f"unknown feature_protocol: {self.feature_protocol}"
             self.pred_feature_weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
                 if pred_cfg.get('feature_weights', None) is not None else None
             # lambda_pred=1.0: 环境侧产出未加权的 r_pred = Φ_t − Φ_{t−1}，
@@ -168,15 +173,20 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 
         if self.pred_enabled:
             self._turn = 0
-            # 逐环境构建特征提取器: target_visible 的验证目标必须与
-            # prompt 语义 ("任务描述中提到的物体") 对齐，故物体集来自各自的任务描述
-            self.feature_extractors = [
-                create_alfworld_feature_extractor(
-                    object_types=task_target_objects(task) or None,
-                    feature_weights=self.pred_feature_weights,
-                )
-                for task in self.tasks
-            ]
+            if self.feature_protocol == 'schema':
+                # v0.2 协议: 所有任务共享同一 Φ (schema 级),单实例即可
+                shared = create_alfworld_schema_extractor(feature_weights=self.pred_feature_weights)
+                self.feature_extractors = [shared] * len(self.tasks)
+            else:
+                # v0.1 legacy: 逐环境构建,target_visible 的验证目标与
+                # prompt 语义 ("任务描述中提到的物体") 对齐,物体集来自各自任务描述
+                self.feature_extractors = [
+                    create_alfworld_feature_extractor(
+                        object_types=task_target_objects(task) or None,
+                        feature_weights=self.pred_feature_weights,
+                    )
+                    for task in self.tasks
+                ]
 
         full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
         return {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}, infos
@@ -220,6 +230,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 infos[i]['pred_accuracy'] = accuracy
                 infos[i]['pred_reward'] = pred_reward.shaped_reward
                 infos[i]['pred_parse_valid'] = parsed is not None
+                if self.feature_protocol == 'schema':
+                    # graded 探针: 开放集 visible_objects 的 F1,仅日志不计奖励 (§7.2)。
+                    # 未给出该字段按 0 记 (不预测 = 不得分),与 parse_valid 分开观察。
+                    infos[i]['pred_f1_visible_objects'] = self._visible_objects_f1(
+                        parsed, text_obs[i], admissible_commands[i], infos[i])
             self._turn += 1
 
         next_observations = {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}
@@ -228,10 +243,20 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
 
         return next_observations, rewards, dones, infos
     
+    def _visible_objects_f1(self, parsed, actual_obs, actual_actions, actual_info) -> float:
+        if parsed is None or 'visible_objects' not in parsed:
+            return 0.0
+        composite = self.feature_extractors[0]  # schema 模式全环境共享
+        extractor = next(e for e, _ in composite.extractors
+                         if e.feature_type == 'visible_objects')
+        predicted = prediction_to_features(parsed)['visible_objects']
+        actual = extractor.extract(actual_obs, actual_actions, actual_info)
+        return extractor.verify_score(predicted, actual)
+
     def extract_task(self, text_obs: List[str]):
         for obs in text_obs:
             task_start = obs.find('Your task is to: ')
-            
+
             if task_start != -1:
                 self.tasks.append(obs[task_start + len('Your task is to: '):].strip())
             else:
@@ -249,9 +274,13 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                     obs_key="text_obs",
                     action_key="action")
             
-        # PS 变体模板要求额外的 <predict> 块 (docs/ps_grpo_integration_design.md §2A)
-        template_no_his = ALFWORLD_TEMPLATE_NO_HIS_PS if self.pred_enabled else ALFWORLD_TEMPLATE_NO_HIS
-        template = ALFWORLD_TEMPLATE_PS if self.pred_enabled else ALFWORLD_TEMPLATE
+        # PS 变体模板要求额外的 <predict> 块 (docs/ps_grpo_integration_design.md §2A/§7.2)
+        if not self.pred_enabled:
+            template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS, ALFWORLD_TEMPLATE
+        elif self.feature_protocol == 'schema':
+            template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS_PS_SCHEMA, ALFWORLD_TEMPLATE_PS_SCHEMA
+        else:
+            template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS_PS, ALFWORLD_TEMPLATE_PS
 
         for i in range(len(text_obs)):
             # exclude 'help' in admissible_actions[i]

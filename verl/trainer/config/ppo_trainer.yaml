@@ -312,11 +312,8 @@ env:
     prediction: # PS-GRPO 预测充分性采集 (docs/ps_grpo_integration_design.md)
       enable: False # 开启后使用带 <predict> 块的 prompt 并采集 pred_accuracy/pred_reward 指标 (不注入奖励)
       horizon: 1 # 预测步长 k; 目前仅支持 1
-      feature_weights:
-        object_seen: 0.4
-        location_change: 0.4
-        action_available: 0.2
-        task_progress: 0.0 # "预测未完成"几乎恒对，默认不计分仅日志
+      feature_protocol: schema # schema (v0.2 任务无关协议,默认) | task_targets (v0.1 兼容,复现 pilot 用)
+      feature_weights: null # null = 各协议的默认权重 (schema: location 0.5/objects_visible 0.5; task_targets: 见 create_alfworld_feature_extractor)
   search:
     log_requests: false
     search_url: "http://127.0.0.1:8000/retrieve" # also support multiple urls: ["http://127.0.0.1:8000/retrieve", "http://127.0.0.1:8001/retrieve"]
