@@ -252,6 +252,13 @@ algorithm:
     mode: "mean_norm" # "mean_norm" or "mean_std_norm"
     enable_similarity: False # whether to use similarity-based anchor state grouping in GiGPO (supported for text-only tasks)
     similarity_thresh: 0.95 # similarity threshold for GiGPO (0.0, 1.0)
+  pred_reward: # PS-GRPO 预测充分性奖励注入 (docs/ps_grpo_integration_design.md §2D)
+    enable: False # 需同时开启 env.<env>.prediction.enable 采集才生效
+    lambda: 0.1 # 注入系数 λ; 总奖励 = 任务奖励 + λ·r_pred (r_pred 逐 step 注入)
+    anneal: # λ 退火，后期回归任务奖励主导 (研究计划 §4.3)
+      style: constant # constant / linear / cosine
+      final_ratio: 0.0 # 末期 λ = lambda * final_ratio
+      total_steps: -1 # 退火总步数; <=0 时用 total_training_steps
   filter_groups: # DAPO from https://arxiv.org/abs/2503.14476
     enable: False
     max_num_gen_batches: 10
@@ -301,6 +308,14 @@ env:
     n: 1 # the group number of envs (for GRPO and GiGPO).
   alfworld:
     eval_dataset: eval_in_distribution
+    prediction: # PS-GRPO 预测充分性采集 (docs/ps_grpo_integration_design.md)
+      enable: False # 开启后使用带 <predict> 块的 prompt 并采集 pred_accuracy/pred_reward 指标 (不注入奖励)
+      horizon: 1 # 预测步长 k; 目前仅支持 1
+      feature_weights:
+        object_seen: 0.4
+        location_change: 0.4
+        action_available: 0.2
+        task_progress: 0.0 # "预测未完成"几乎恒对，默认不计分仅日志
   search:
     log_requests: false
     search_url: "http://127.0.0.1:8000/retrieve" # also support multiple urls: ["http://127.0.0.1:8000/retrieve", "http://127.0.0.1:8001/retrieve"]

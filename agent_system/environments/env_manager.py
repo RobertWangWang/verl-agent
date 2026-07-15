@@ -13,16 +13,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Tuple, Dict, Union, Any
-from collections import defaultdict
-import torch
-import numpy as np
-from functools import partial
 import os
-from agent_system.environments.prompts import *
-from agent_system.environments.base import EnvironmentManagerBase, to_numpy
-from agent_system.memory import SimpleMemory, SearchMemory
+from functools import partial
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
 from omegaconf import OmegaConf
+
+from agent_system.environments.base import EnvironmentManagerBase, to_numpy
+from agent_system.environments.prompts import *
+from agent_system.environments.verifiable_features import (
+    create_alfworld_feature_extractor,
+    parse_predict_block,
+    prediction_to_features,
+    task_target_objects,
+)
+from agent_system.memory import HybridMemory, SearchMemory, SimpleMemory
+
 
 def parse_gamefile(infos):
     gamefile = []
@@ -132,9 +139,24 @@ class SearchEnvironmentManager(EnvironmentManagerBase):
 
 class AlfWorldEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, config):
-        self.memory = SimpleMemory()
+        # PS-GRPO 预测充分性采集 (docs/ps_grpo_integration_design.md §2B)
+        alfworld_cfg = config.env.get('alfworld', None)
+        pred_cfg = alfworld_cfg.get('prediction', None) if alfworld_cfg is not None else None
+        self.pred_enabled = bool(pred_cfg is not None and pred_cfg.get('enable', False))
+        if self.pred_enabled:
+            self.pred_feature_weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
+                if pred_cfg.get('feature_weights', None) is not None else None
+            # lambda_pred=1.0: 环境侧产出未加权的 r_pred = Φ_t − Φ_{t−1}，
+            # λ 缩放与退火由 trainer 端统一施加 (S2)
+            self.memory = HybridMemory(
+                history_length=config.env.history_length,
+                prediction_horizon=pred_cfg.get('horizon', 1),
+                lambda_pred=1.0,
+            )
+        else:
+            self.memory = SimpleMemory()
         super().__init__(envs, projection_f, config)
-    
+
     def reset(self, kwargs):
         text_obs, image_obs, infos = self.envs.reset()
         self.gamefile = parse_gamefile(infos)
@@ -144,10 +166,26 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.pre_text_obs = text_obs
         self.extract_task(text_obs)
 
+        if self.pred_enabled:
+            self._turn = 0
+            # 逐环境构建特征提取器: target_visible 的验证目标必须与
+            # prompt 语义 ("任务描述中提到的物体") 对齐，故物体集来自各自的任务描述
+            self.feature_extractors = [
+                create_alfworld_feature_extractor(
+                    object_types=task_target_objects(task) or None,
+                    feature_weights=self.pred_feature_weights,
+                )
+                for task in self.tasks
+            ]
+
         full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
         return {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}, infos
-    
+
     def step(self, text_actions: List[str]):
+        if self.pred_enabled:
+            # 从 response 中解析本步 <predict> 预测 (在 projection 之前，text_actions 是完整文本)
+            parsed_predictions = [parse_predict_block(t) for t in text_actions]
+
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
         self.memory.store({'text_obs': self.pre_text_obs, 'action': actions})
@@ -160,6 +198,29 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.pred_enabled:
+            # k=1: 预测在同一次 step 调用内即可用 o_{t+1} 闭环验证
+            admissible_commands = self.envs.get_admissible_commands
+            for i in range(len(text_obs)):
+                parsed = parsed_predictions[i]
+                if parsed is not None:
+                    self.memory.record_prediction(i, self._turn, prediction_to_features(parsed))
+                    accuracy, _ = self.memory.verify_prediction(
+                        env_idx=i,
+                        turn=self._turn,
+                        feature_extractor=self.feature_extractors[i],
+                        actual_obs=text_obs[i],
+                        actual_actions=admissible_commands[i],
+                        actual_info=infos[i],
+                    )
+                else:
+                    accuracy = 0.0  # 解析失败按 0 记，比率单独出 pred_parse_valid 指标
+                pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
+                infos[i]['pred_accuracy'] = accuracy
+                infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_parse_valid'] = parsed is not None
+            self._turn += 1
 
         next_observations = {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}
         rewards = to_numpy(rewards)
@@ -188,17 +249,21 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                     obs_key="text_obs",
                     action_key="action")
             
+        # PS 变体模板要求额外的 <predict> 块 (docs/ps_grpo_integration_design.md §2A)
+        template_no_his = ALFWORLD_TEMPLATE_NO_HIS_PS if self.pred_enabled else ALFWORLD_TEMPLATE_NO_HIS
+        template = ALFWORLD_TEMPLATE_PS if self.pred_enabled else ALFWORLD_TEMPLATE
+
         for i in range(len(text_obs)):
             # exclude 'help' in admissible_actions[i]
             reformatted_admissible_actions = "\n ".join(f"'{s}'" for s in admissible_actions[i] if s != 'help')
 
             if init or self.config.env.history_length <= 0:
-                obs = ALFWORLD_TEMPLATE_NO_HIS.format(
+                obs = template_no_his.format(
                     current_observation=text_obs[i],
                     admissible_actions=reformatted_admissible_actions
                 )
             else:
-                obs = ALFWORLD_TEMPLATE.format(
+                obs = template.format(
                     task_description=self.tasks[i],
                     step_count=len(self.memory[i]),
                     history_length=valid_lens[i],
@@ -628,7 +693,7 @@ def make_envs(config):
         val_envs = GymCardEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs
     elif "alfworld" in config.env.env_name.lower():
-        from agent_system.environments.env_package.alfworld import build_alfworld_envs, alfworld_projection
+        from agent_system.environments.env_package.alfworld import alfworld_projection, build_alfworld_envs
         if config.env.env_name == 'alfworld/AlfredThorEnv':
             alf_config_path = os.path.join(os.path.dirname(__file__), 'env_package/alfworld/configs/config_tw.yaml')
         elif config.env.env_name == 'alfworld/AlfredTWEnv':
@@ -686,7 +751,7 @@ def make_envs(config):
         time.sleep((config.data.train_batch_size * group_n + config.data.val_batch_size) * 0.1) # wait for the envs to be ready
         return envs, val_envs
     elif "appworld" in config.env.env_name.lower():
-        from agent_system.environments.env_package.appworld import build_appworld_envs, appworld_projection
+        from agent_system.environments.env_package.appworld import appworld_projection, build_appworld_envs
         _envs = build_appworld_envs(dataset_name='train', seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, start_server_id=0, resources_per_worker=resources_per_worker)
         _val_envs = build_appworld_envs(dataset_name='test_normal', seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, start_server_id=config.data.train_batch_size*group_n, resources_per_worker=resources_per_worker)
         

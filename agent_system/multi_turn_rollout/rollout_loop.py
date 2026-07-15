@@ -13,18 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
+import uuid
+from typing import Dict, List
+
 import numpy as np
+import torch
+from transformers import PreTrainedTokenizer
+
+import verl.utils.torch_functional as verl_F
+from agent_system.environments import EnvironmentManagerBase
+from agent_system.multi_turn_rollout.utils import filter_group_data, process_image, to_list_of_dict, torch_to_numpy
 from verl import DataProto
+from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.utils.dataset.rl_dataset import collate_fn
 from verl.utils.model import compute_position_id_with_mask
-import verl.utils.torch_functional as verl_F
-from transformers import PreTrainedTokenizer
-import uuid
-from agent_system.multi_turn_rollout.utils import process_image, to_list_of_dict, torch_to_numpy, filter_group_data
-from agent_system.environments import EnvironmentManagerBase
-from typing import List, Dict
-from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
+
 
 class TrajectoryCollector:
     def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
@@ -84,7 +87,7 @@ class TrajectoryCollector:
         if obs_text is not None:
             obs_content += obs_text
         else:
-            print(f"Warning: No text observation found!")
+            print("Warning: No text observation found!")
 
         
         chat = np.array([{
@@ -375,6 +378,12 @@ class TrajectoryCollector:
                 batch.non_tensor_batch['is_action_valid'] = np.array([info['is_action_valid'] for info in infos], dtype=bool)
             else:
                 batch.non_tensor_batch['is_action_valid'] = np.ones(batch_size, dtype=bool)
+
+            # PS-GRPO 预测充分性字段 (docs/ps_grpo_integration_design.md §2C)
+            if 'pred_reward' in infos[0]:
+                batch.non_tensor_batch['pred_rewards'] = np.array([info['pred_reward'] for info in infos], dtype=np.float32)
+                batch.non_tensor_batch['pred_accuracy'] = np.array([info['pred_accuracy'] for info in infos], dtype=np.float32)
+                batch.non_tensor_batch['pred_parse_valid'] = np.array([info['pred_parse_valid'] for info in infos], dtype=bool)
 
             if 'tool_calling' in infos[0]:
                 tool_callings[active_masks] += np.array([info['tool_calling'] for info in infos], dtype=np.float32)[active_masks]

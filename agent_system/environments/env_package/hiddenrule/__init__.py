@@ -1,4 +1,4 @@
-# Copyright 2025 Nanyang Technological University (NTU), Singapore
+# Copyright 2026 Nanyang Technological University (NTU), Singapore
 # and the verl-agent (GiGPO) team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .memory import SimpleMemory, SearchMemory
-from .predictive_memory import (
-    PredictiveMemory,
-    HybridMemory,
-    PredictionResult,
-    PredictionReward
-)
+# HRG-a: 核心环境 (纯 Python,零 verl 依赖)
+# HRG-c 将在此加入 ray 并行 worker (envs.py) 与 <action> projection (projection.py)
+from .hiddenrule import HiddenRuleEnv, HRGConfig  # noqa: F401

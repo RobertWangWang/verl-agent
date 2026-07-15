@@ -19,9 +19,8 @@ This trainer supports model-agonistic model initialization with huggingface
 """
 
 import json
+import math
 import os
-import uuid
-from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -38,8 +37,9 @@ from torch.utils.data import Dataset, Sampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 from tqdm import tqdm
 
+from agent_system.multi_turn_rollout import TrajectoryCollector, adjust_batch
+from gigpo import core_gigpo
 from verl import DataProto
-from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.base import Worker
 from verl.single_controller.ray import RayClassWithInitArgs, RayResourcePool, RayWorkerGroup
 from verl.single_controller.ray.base import create_colocated_worker_cls
@@ -49,7 +49,6 @@ from verl.trainer.ppo.metric_utils import (
     compute_data_metrics,
     compute_throughout_metrics,
     compute_timing_metrics,
-    process_validation_metrics,
 )
 from verl.trainer.ppo.reward import compute_reward, compute_reward_async
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path
@@ -60,9 +59,6 @@ from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seql
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 from verl.workers.rollout.async_server import AsyncLLMServerManager
-from gigpo import core_gigpo
-
-from agent_system.multi_turn_rollout import TrajectoryCollector, adjust_batch
 
 WorkerType = Type[Worker]
 
@@ -222,6 +218,71 @@ def apply_invalid_action_penalty(data: DataProto, invalid_action_penalty_coef=fl
     valid_action_ratio = np.mean(data.non_tensor_batch['is_action_valid'].astype(np.float32)).item()
     metrics = {'episode/valid_action_ratio': valid_action_ratio}
     return data, metrics
+
+
+def pred_lambda_schedule(pred_reward_cfg, global_step: int, total_training_steps: int) -> float:
+    """
+    PS-GRPO 预测奖励系数 λ 的退火调度 (docs/ps_grpo_integration_design.md §2D)。
+
+    研究计划 §4.3: λ 采用退火调度，后期回归任务奖励主导，防止策略过拟合预测目标。
+    styles: constant / linear / cosine; anneal.total_steps <= 0 时用 total_training_steps。
+    """
+    base_lambda = float(pred_reward_cfg.get('lambda', 0.1))
+    anneal_cfg = pred_reward_cfg.get('anneal', None)
+    style = anneal_cfg.get('style', 'constant') if anneal_cfg is not None else 'constant'
+    if style == 'constant':
+        return base_lambda
+
+    total = int(anneal_cfg.get('total_steps', -1))
+    if total <= 0:
+        total = int(total_training_steps or 0)
+    if total <= 0:
+        return base_lambda
+
+    progress = min(max(global_step / total, 0.0), 1.0)
+    final_ratio = float(anneal_cfg.get('final_ratio', 0.0))
+    if style == 'linear':
+        ratio = 1.0 - (1.0 - final_ratio) * progress
+    elif style == 'cosine':
+        ratio = final_ratio + (1.0 - final_ratio) * 0.5 * (1.0 + math.cos(math.pi * progress))
+    else:
+        raise ValueError(f"Unknown pred_reward anneal style: {style}")
+    return base_lambda * ratio
+
+
+def apply_prediction_reward(data: DataProto, lambda_pred: float):
+    """
+    PS-GRPO: 把预测充分性 shaping 奖励逐 step 注入 (镜像 apply_invalid_action_penalty)。
+
+    r_pred = Φ_t − Φ_{t−1} 由环境侧产出 (未加权，见 AlfWorldEnvironmentManager)，
+    此处乘以 λ 后加到各 step 样本最后一个有效 response token 的 token_level_scores 上。
+    必须逐 step 注入: potential shaping 在 episode 级求和会望远镜相消 (设计文档 §0)。
+    同时更新 GiGPO 的 step_rewards (若存在)，与 invalid penalty 的处理一致。
+    """
+    reward_tensor = data.batch['token_level_scores']
+    if 'step_rewards' in data.batch.keys():
+        step_rewards = data.batch['step_rewards']
+    pred_rewards = data.non_tensor_batch['pred_rewards'].astype(np.float32)
+    for i in range(len(data)):
+        data_item = data[i]  # DataProtoItem
+
+        prompt_ids = data_item.batch['prompts']
+
+        prompt_length = prompt_ids.shape[-1]
+
+        valid_response_length = data_item.batch['attention_mask'][prompt_length:].sum()
+
+        reward_tensor[i, valid_response_length - 1] += lambda_pred * float(pred_rewards[i])
+
+        if 'step_rewards' in data.batch.keys():
+            step_rewards[i] += lambda_pred * float(pred_rewards[i])
+
+    metrics = {
+        'episode/pred_lambda': lambda_pred,
+        'episode/pred_reward_injected/mean': float(lambda_pred * pred_rewards.mean()),
+    }
+    return data, metrics
+
 
 def compute_response_mask(data: DataProto):
     """Compute the attention mask for the response part of the sequence.
@@ -1206,6 +1267,14 @@ class RayPPOTrainer:
                                                                                   invalid_action_penalty_coef=self.config.actor_rollout_ref.actor.invalid_action_penalty_coef,
                                                                                   )
                             metrics.update(invalid_metrics)
+
+                        # PS-GRPO: inject prediction-sufficiency shaping reward per step
+                        pred_reward_cfg = self.config.algorithm.get('pred_reward', None)
+                        if pred_reward_cfg is not None and pred_reward_cfg.get('enable', False) \
+                                and 'pred_rewards' in batch.non_tensor_batch:
+                            pred_lambda = pred_lambda_schedule(pred_reward_cfg, self.global_steps, self.total_training_steps)
+                            batch, pred_metrics = apply_prediction_reward(batch, lambda_pred=pred_lambda)
+                            metrics.update(pred_metrics)
 
                         # compute rewards. apply_kl_penalty if available
                         if self.config.algorithm.use_kl_in_reward:

@@ -34,3 +34,29 @@ Now it's your turn to take an action.
 You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags. 
 Once you've finished your reasoning, you should choose an admissible action for current step and present it within <action> </action> tags.
 """
+
+# PS-GRPO (预测充分性) 变体: 在 <think> 与 <action> 之间要求受限预测 <predict> 块。
+# 预测由 verifiable_features.parse_predict_block 规则解析、由环境的下一步观测裁决，
+# 不经过 LLM judge。见 docs/ps_grpo_integration_design.md §2A。
+_ALFWORLD_PREDICT_INSTRUCTION = """After your reasoning, predict the outcome of your action, enclosed within <predict> </predict> tags in exactly this format:
+<predict>next_location: [the location you will be at after this action, e.g. 'cabinet 2', or 'none' if unchanged]; target_visible: [yes/no - will any object mentioned in your task be visible in the next observation?]; task_done: [yes/no - will the task be completed after this action?]</predict>
+Finally, you should choose an admissible action for current step and present it within <action> </action> tags."""
+
+ALFWORLD_TEMPLATE_NO_HIS_PS = """
+You are an expert agent operating in the ALFRED Embodied Environment.
+Your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+""" + _ALFWORLD_PREDICT_INSTRUCTION + "\n"
+
+ALFWORLD_TEMPLATE_PS = """
+You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+""" + _ALFWORLD_PREDICT_INSTRUCTION + "\n"

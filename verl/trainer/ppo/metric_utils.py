@@ -25,6 +25,7 @@ import torch
 from verl import DataProto
 from verl.utils.import_utils import deprecated
 
+
 @deprecated("verl.utils.metric.reduce_metrics")
 def reduce_metrics(metrics: Dict[str, List[Any]]) -> Dict[str, Any]:
     """
@@ -185,6 +186,16 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
         # "episode/tool_call_count/min":
         #     batch.non_tensor_batch["tool_callings"][unique_idx].min().item(),
         **({f"episode/{k}": v[0].item() for k, v in batch.non_tensor_batch.items() if "success_rate" in k}),
+        # PS-GRPO prediction-sufficiency metrics (per-step, only when collection is enabled)
+        **(
+            {
+                "episode/pred_accuracy/mean": float(np.asarray(batch.non_tensor_batch["pred_accuracy"], dtype=np.float32).mean()),
+                "episode/pred_reward/mean": float(np.asarray(batch.non_tensor_batch["pred_rewards"], dtype=np.float32).mean()),
+                "episode/pred_parse_valid_ratio": float(np.asarray(batch.non_tensor_batch["pred_parse_valid"], dtype=np.float32).mean()),
+            }
+            if "pred_accuracy" in batch.non_tensor_batch
+            else {}
+        ),
     }
     return metrics
 
