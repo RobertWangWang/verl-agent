@@ -707,7 +707,11 @@ def make_envs(config):
         _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, group_n, is_train=True, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
         _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, config.data.val_batch_size, 1, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
         
-        projection_f = partial(alfworld_projection)
+        projection_f = partial(
+            alfworld_projection,
+            # Qwen3 + enable_thinking=False 时必须设 False,见 projection.py 注释
+            require_think=config.env.alfworld.get('require_think_tags', True),
+        )
         envs = AlfWorldEnvironmentManager(_envs, projection_f, config)
         val_envs = AlfWorldEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs

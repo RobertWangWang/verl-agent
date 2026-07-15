@@ -308,6 +308,7 @@ env:
     n: 1 # the group number of envs (for GRPO and GiGPO).
   alfworld:
     eval_dataset: eval_in_distribution
+    require_think_tags: True # Qwen3 + enable_thinking=False 时设 False (chat template 预注入空 think 块,response 不可能再含 <think>)
     prediction: # PS-GRPO 预测充分性采集 (docs/ps_grpo_integration_design.md)
       enable: False # 开启后使用带 <predict> 块的 prompt 并采集 pred_accuracy/pred_reward 指标 (不注入奖励)
       horizon: 1 # 预测步长 k; 目前仅支持 1

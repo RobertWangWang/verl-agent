@@ -76,6 +76,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
     env.env_name=alfworld/AlfredTWEnv \
+    env.alfworld.require_think_tags=False \
     env.seed=0 \
     env.max_steps=50 \
     env.rollout.n=$group_size \

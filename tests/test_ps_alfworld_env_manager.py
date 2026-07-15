@@ -198,3 +198,38 @@ class TestPredictionDisabled:
         manager = AlfWorldEnvironmentManager(FakeAlfWorldEnvs(), fake_projection, config)
         assert manager.pred_enabled is False
         assert isinstance(manager.memory, SimpleMemory)
+
+
+# ---------------------------------------------------------------------------
+# alfworld_projection 的 require_think 开关 (Qwen3 enable_thinking=False 兼容)
+# ---------------------------------------------------------------------------
+
+class TestProjectionRequireThink:
+    QWEN3_STYLE = "### Reasoning:\nI should check the drawer.\n<action>examine drawer 2</action>"
+    QWEN25_STYLE = "<think>I should check the drawer.</think>\n<action>examine drawer 2</action>"
+
+    def _project(self, text, require_think):
+        from agent_system.environments.env_package.alfworld.projection import alfworld_projection
+        actions, valids = alfworld_projection([text], [["examine drawer 2"]],
+                                              require_think=require_think)
+        return actions[0], valids[0]
+
+    def test_legacy_mode_rejects_missing_think(self):
+        action, valid = self._project(self.QWEN3_STYLE, require_think=True)
+        assert action == "examine drawer 2"  # 动作仍被提取
+        assert valid == 0                    # 但判无效 (旧语义)
+
+    def test_relaxed_mode_accepts_qwen3_format(self):
+        action, valid = self._project(self.QWEN3_STYLE, require_think=False)
+        assert action == "examine drawer 2"
+        assert valid == 1
+
+    def test_both_modes_accept_think_format(self):
+        for rt in (True, False):
+            action, valid = self._project(self.QWEN25_STYLE, require_think=rt)
+            assert action == "examine drawer 2"
+            assert valid == 1
+
+    def test_relaxed_mode_still_rejects_missing_action(self):
+        _, valid = self._project("### Reasoning: no action tag here", require_think=False)
+        assert valid == 0

@@ -16,11 +16,17 @@
 from typing import List
 import re
 
-def alfworld_projection(actions: List[str], action_pools: List[List[str]]):
+def alfworld_projection(actions: List[str], action_pools: List[List[str]],
+                        require_think: bool = True):
     """
     An function to process the actions
     actions: the list of actions to be processeed, it is a list of strings.
     action_pools: the list of action pools, each pool is a list of strings.
+    require_think: 是否要求 response 含 <think>...</think> 才算有效动作。
+        Qwen3 在 enable_thinking=False 时,chat template 会把空 think 块预注入
+        prompt 侧,response 结构上不可能再含 <think> 标签 → 该检查必须关闭
+        (config: env.alfworld.require_think_tags=False),否则 valid_action_ratio
+        恒为 0 且每步误吃 invalid penalty。同一组对比实验必须使用相同取值。
     """
 
     valids = [0] * len(actions)
@@ -50,10 +56,11 @@ def alfworld_projection(actions: List[str], action_pools: List[List[str]]):
             actions[i] = actions[i][-30:]
 
         # check <think>...</think>
-        think_start_idx = original_str.find("<think>")
-        think_end_idx = original_str.find("</think>")
-        if think_start_idx == -1 or think_end_idx == -1:
-            valids[i] = 0
+        if require_think:
+            think_start_idx = original_str.find("<think>")
+            think_end_idx = original_str.find("</think>")
+            if think_start_idx == -1 or think_end_idx == -1:
+                valids[i] = 0
 
         # check if contains any Chinese characters
         if re.search(r'[\u4e00-\u9fff]', original_str):
