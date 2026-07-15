@@ -20,6 +20,7 @@ HiddenRule-Gym 状态机与 gym 风格环境 (docs/hiddenrule_gym_design.md §1.
 共用同一份转移语义,杜绝两者分叉。
 """
 
+import random
 from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Tuple
 
@@ -183,15 +184,19 @@ class HiddenRuleEnv:
         self.state: Optional[CoreState] = None
         self.steps = 0
         self._oracle_steps: Optional[int] = None
+        self._noise_rng: Optional[random.Random] = None
 
     def reset(self, seed: int) -> Tuple[str, Dict]:
         from .oracle import solve  # 延迟导入避免环
         self.world = generate_world(self.config, seed)
         self.state = initial_state(self.world)
         self.steps = 0
+        # 观测噪声专用 rng: 与布局 rng 独立,同 seed 同动作序列 → 观测逐字节可复现
+        self._noise_rng = random.Random(seed ^ 0x5EED11)
         solution = solve(self.world)
         self._oracle_steps = len(solution) if solution is not None else -1
-        obs = render_observation(self.world, self.state, "You enter the rooms.", self.config)
+        obs = render_observation(self.world, self.state, "You enter the rooms.",
+                                 self.config, rng=self._noise_rng)
         return obs, self._info(action_valid=True)
 
     def step(self, action: str) -> Tuple[str, float, bool, Dict]:
@@ -201,7 +206,8 @@ class HiddenRuleEnv:
         won = self.state.vault_open
         done = won or self.steps >= self.config.max_steps
         reward = VAULT_REWARD if won else 0.0
-        obs = render_observation(self.world, self.state, feedback, self.config)
+        obs = render_observation(self.world, self.state, feedback, self.config,
+                                 rng=self._noise_rng)
         return obs, reward, done, self._info(action_valid=valid)
 
     def admissible_actions(self) -> List[str]:

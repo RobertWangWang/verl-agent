@@ -47,13 +47,25 @@ Adding a new environment = env package + prompts file + manager class registered
 
 ## Active research: PS-GRPO (predictive-sufficiency memory rewards)
 
-This fork's ongoing research (proposal: `proposal_predictive_belief_memory_RL.md`, in Chinese) adds a dense, turn-level, self-supervised reward for memory quality: a memory summary is scored by whether it supports predicting *verifiable features* of future observations (rule-checked, no LLM judge), with potential-based shaping `r_pred(t) = Φ(s_t) − γΦ(s_{t−1})` added to the task reward. New code so far:
+Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**v0.2**, Chinese; supersedes `proposal_predictive_belief_memory_RL.md`). Central claim (H1) is an "adjudicator comparison": memory-reward signals judged by *environment future observations* (this method) vs downstream-task / anchor-QA / self-report / supervised-aux-loss baselines. Design docs: `docs/ps_grpo_integration_design.md` (reward pipeline, stages S0–S4 with acceptance records) and `docs/hiddenrule_gym_design.md` (synthetic env). Every experiment gets a dated record in `research_logs/` (Chinese) — read the latest ones for current status before planning work.
 
-- `agent_system/environments/verifiable_features.py` — `BaseFeatureExtractor` + ALFWorld extractors (`object_seen`, `location_change`, `action_available`, `task_progress`), combined by `CompositeFeatureExtractor` with per-feature weights; factory `create_alfworld_feature_extractor()`. Each extractor implements `extract()` (parse observation/actions/info into a `VerifiableFeature`) and `verify()` (rule-based predicted-vs-actual check).
-- `agent_system/memory/predictive_memory.py` — `PredictiveMemory` (SimpleMemory-style storage plus `predict_future()` / `verify_prediction()` / `compute_prediction_reward()` with potential-based shaping, weighted by `lambda_pred`) and `HybridMemory` (wrapper with an `enable_prediction` toggle). Exported from `agent_system/memory/__init__.py`. The prediction head is currently a placeholder (extracts current features as the "prediction") — a real prediction mechanism is still to be implemented.
-- Tests: `tests/test_predictive_memory.py`, `tests/test_verifiable_features.py`.
+**Implemented and fully wired (S0–S4, unit-tested):**
 
-**Status:** these modules are standalone and unit-tested but **not yet wired into** `env_manager.py`, the rollout loop, or reward computation. Baseline work for the eventual PS-GRPO comparison lives in `docs/grpo_baseline_guide.md` (GRPO ALFWorld baseline guide, Chinese) with matching scripts `examples/grpo_trainer/run_alfworld_full_32gb.sh` (2× RTX 5090 full run) and `examples/grpo_trainer/run_alfworld_mini.sh` (2× RTX 3090 smoke test to verify the rollout→reward→update loop; its comments explain fp32 actor memory math and why `VLLM_ATTENTION_BACKEND=XFORMERS` must not be set on vLLM 0.11).
+- Reward pipeline: PS prompt templates ask for a `<predict>` block → `verifiable_features.parse_predict_block` (rule-based, no LLM judge) → verified against the *next* observation inside `AlfWorldEnvironmentManager.step()` (gate: `env.alfworld.prediction.enable`) → per-step `pred_reward`/`pred_accuracy` collected in `rollout_loop.py` → injected at trainer level by `apply_prediction_reward` + `pred_lambda_schedule` in `ray_trainer.py` (gate: `algorithm.pred_reward.enable`, λ anneal constant/linear/cosine). **r_pred must be injected per step-sample**: potential-based shaping telescopes to ≈0 at episode level.
+- Feature protocols (`env.alfworld.prediction.feature_protocol`): `schema` (default; v0.2 task-agnostic — `objects_visible` bool, `visible_objects` open-set F1 log-only probe, `receptacle_state`; all tasks share one Φ) vs `task_targets` (v0.1 legacy, kept only to reproduce early pilots). All arms of one comparison must use the same protocol.
+- HiddenRule-Gym (`agent_system/environments/env_package/hiddenrule/`): synthetic rooms-and-devices POMDP for the paper's main figures. 4 hidden-rule families (conj/seq/xor/count; train/probe family split), BFS oracle sharing the env's pure `transition()`, exact coverage C = I(Φ;s)/H(s) over non-terminal reachable states + greedy mask ladder (`coverage.py`), text-layer-only noise knobs (p_obs, obs_flip, noisy-TV sensor channels). verl integration (HRG-c) pending.
+- Tests: `tests/test_{verifiable_features,predictive_memory,ps_alfworld_env_manager,ps_reward_injection,hiddenrule_core,hiddenrule_coverage}.py`.
+
+**Hard-won gotchas:**
+
+- Qwen3 + `enable_thinking=False` pre-injects an empty `<think>` block into the prompt side, so responses never contain `<think>` tags → set `env.alfworld.require_think_tags=False` for **all** Qwen3 runs, or valid_action_ratio is 0 by construction and every step eats the invalid penalty.
+- Run scripts consume `$1` (engine) then pass `$@` to Hydra — always give single-line commands; multi-line paste breakage has silently dropped overrides before.
+- TextWorld env workers leak ~1MB/step/worker RAM (no plateau); the local box has a persistent 256GB NVMe swapfile absorbing the cold pages. Restart-on-checkpoint playbook (backup plan) in `research_logs/2026-07-14_ps_grpo_s3_baseline.md`.
+- verl's `perf/max_memory_*_gb` metrics are summed across GPUs, not per-card.
+
+**Results so far:** Qwen2.5-1.5B GRPO ALFWorld baseline (2×RTX 5090, 150 steps, ~37.5 h) — final val success **67.2%** (checkpoints in `checkpoints/verl_agent_alfworld/grpo_baseline_32gb/`; weakness: look_at_obj_in_light 0%). Qwen3-1.7B smokes green under the schema protocol. **Next:** Qwen3-4B GRPO baseline + schema-compliant PS arm on the 8×RTX Pro 6000 server via `examples/grpo_trainer/run_alfworld_qwen3_4b_8gpu.sh`; locally HRG-c (verl integration) and S4c (coverage proxy).
+
+Scripts: `run_alfworld_mini.sh` (2×5090 smoke; fp32 actor memory math in comments), `run_alfworld_full_32gb.sh` (2×5090 full run), `run_alfworld_qwen3_4b_8gpu.sh` (8×96GB server, no offload).
 
 ## Configuration
 
