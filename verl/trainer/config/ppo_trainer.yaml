@@ -319,6 +319,23 @@ env:
     search_url: "http://127.0.0.1:8000/retrieve" # also support multiple urls: ["http://127.0.0.1:8000/retrieve", "http://127.0.0.1:8001/retrieve"]
     topk: 3
     timeout: 60
+  hiddenrule: # HiddenRule-Gym (docs/hiddenrule_gym_design.md)
+    n_rooms: 5
+    n_devices: 6
+    rule_families: [conj, seq, xor, count]
+    rule_arity: 2
+    evidence_lag: 2
+    n_distractor_notes: 1
+    key_door_prob: 0.5
+    p_obs: 1.0 # 部分可观测度 (主图 2/3 的旋钮)
+    obs_flip_prob: 0.0 # 观测翻转噪声 (aleatoric)
+    n_sensor_channels: 0 # noisy-TV 干扰通道数
+    coverage_level: 1.0 # 特征覆盖度档位 (主图 1; 接入 prediction 后用于裁剪 Φ)
+    require_think_tags: True # Qwen3 + enable_thinking=False 时设 False
+    prediction: # PS-GRPO 预测充分性采集 (与 env.alfworld.prediction 同构; HRG 仅 schema 协议)
+      enable: False
+      horizon: 1
+      feature_weights: null # null = features.py 默认 (location 0.5 / objects_visible 0.5)
   sokoban:
     dim_room: [6, 6]
     num_boxes: 1

@@ -105,10 +105,19 @@ def transition(world: World, state: CoreState, action: str) -> Tuple[CoreState, 
     """
     执行动作。返回 (新状态, 反馈文本, 动作是否有效)。
     无效动作 (不在 admissible 集) 一律原地不动,反馈 "Nothing happens."
+
+    匹配大小写不敏感: 机关名含大写字母 (lever_E),而上游 projection 会把
+    LLM 输出统一转小写 —— 精确匹配曾导致 manager 通路上所有动作被判无效
+    (HRG-d 首跑 0/32 事故,见 research_logs)。按小写归一到唯一的规范动作。
     """
     action = action.strip()
-    if action not in admissible_actions(world, state):
-        return state, "Nothing happens.", False
+    candidates = admissible_actions(world, state)
+    if action not in candidates:
+        lowered = {c.lower(): c for c in candidates}
+        canonical = lowered.get(action.lower())
+        if canonical is None:
+            return state, "Nothing happens.", False
+        action = canonical
 
     if action == "look":
         return state, "You look around.", True

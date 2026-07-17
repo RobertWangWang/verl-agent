@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# HRG-a: 核心环境 (纯 Python,零 verl 依赖)
-# HRG-c 将在此加入 ray 并行 worker (envs.py) 与 <action> projection (projection.py)
+# 核心环境 (纯 Python,零 verl 依赖) + ray 并行层 + projection (HRG-c)
+from .envs import build_hiddenrule_envs  # noqa: F401
 from .hiddenrule import HiddenRuleEnv, HRGConfig  # noqa: F401
+from .projection import hiddenrule_projection  # noqa: F401

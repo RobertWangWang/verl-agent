@@ -603,7 +603,7 @@ _NO_VALUES = {'no', 'false', 'n', '0'}
 _NONE_VALUES = {'none', 'no change', 'n/a', 'na', 'same', 'unchanged', ''}
 
 
-def parse_predict_block(text: str) -> Optional[Dict[str, Any]]:
+def parse_predict_block(text: str, object_vocab: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
     """
     从 LLM response 文本中解析 <predict> 块。
 
@@ -625,6 +625,11 @@ def parse_predict_block(text: str) -> Optional[Dict[str, Any]]:
     if match is None:
         return None
 
+    # visible_objects 的词表: 默认 ALFWorld 本体;其他环境 (如 HiddenRule 的
+    # lever_a/note_1) 传入自己的 schema 级词表
+    if object_vocab is None:
+        object_vocab = ALFWORLD_OBJECT_VOCAB
+
     parsed: Dict[str, Any] = {}
     for part in match.group(1).split(';'):
         if ':' not in part:
@@ -642,13 +647,13 @@ def parse_predict_block(text: str) -> Optional[Dict[str, Any]]:
             elif value in _NO_VALUES:
                 parsed[key] = False
         elif key == 'visible_objects':
-            # 开放集预测: "ladle, knife" / "[ladle, knife]" / "none"
+            # 开放集预测: "ladle, knife" / "[lever_A, note_1]" / "none"
             cleaned = value.strip('[]')
             if cleaned in _NONE_VALUES:
                 parsed['visible_objects'] = []
             else:
-                objs = [t for t in re.findall(r'[a-z]+', cleaned)
-                        if t in ALFWORLD_OBJECT_VOCAB]
+                objs = [t for t in re.findall(r'[a-z][a-z_0-9]*', cleaned)
+                        if t in object_vocab]
                 parsed['visible_objects'] = sorted(set(objs))
         elif key == 'task_done':
             if value in _YES_VALUES:

@@ -693,15 +693,152 @@ class AppWorldEnvironmentManager(EnvironmentManagerBase):
                 postprocess_text_obs.append(obs)
         return postprocess_text_obs
 
+class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
+    """
+    HiddenRule-Gym 的环境管理器 (docs/hiddenrule_gym_design.md §4)。
+    PS 预测采集与 AlfWorld 同构 (schema 协议,同名 feature_type,复用整条管线)。
+    """
+
+    def __init__(self, envs, projection_f, config):
+        from agent_system.environments.env_package.hiddenrule.features import (
+            create_hiddenrule_schema_extractor,
+        )
+        hr_cfg = config.env.get('hiddenrule', None)
+        pred_cfg = hr_cfg.get('prediction', None) if hr_cfg is not None else None
+        self.pred_enabled = bool(pred_cfg is not None and pred_cfg.get('enable', False))
+        if self.pred_enabled:
+            weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
+                if pred_cfg.get('feature_weights', None) is not None else None
+            # HRG 只有 schema 协议 (环境本身无任务变体); lambda_pred=1.0 同 AlfWorld:
+            # 环境侧产出未加权 r_pred,λ 与退火由 trainer 端施加
+            self.feature_extractor = create_hiddenrule_schema_extractor(feature_weights=weights)
+            self.memory = HybridMemory(
+                history_length=config.env.history_length,
+                prediction_horizon=pred_cfg.get('horizon', 1),
+                lambda_pred=1.0,
+            )
+        else:
+            self.memory = SimpleMemory()
+        super().__init__(envs, projection_f, config)
+
+    def reset(self, kwargs):
+        text_obs, infos = self.envs.reset()
+        self.memory.reset(batch_size=len(text_obs))
+        self.pre_text_obs = text_obs
+        if self.pred_enabled:
+            self._turn = 0
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands, init=True)
+        return {'text': full_text_obs, 'image': None, 'anchor': text_obs}, infos
+
+    def step(self, text_actions: List[str]):
+        from agent_system.environments.env_package.hiddenrule.features import HRG_OBJECT_VOCAB
+        if self.pred_enabled:
+            parsed_predictions = [parse_predict_block(t, object_vocab=HRG_OBJECT_VOCAB)
+                                  for t in text_actions]
+
+        actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
+        text_obs, rewards, dones, infos = self.envs.step(actions)
+        self.memory.store({'text_obs': self.pre_text_obs, 'action': actions})
+        self.pre_text_obs = text_obs
+
+        full_text_obs = self.build_text_obs(text_obs, self.envs.get_admissible_commands)
+        for i, info in enumerate(infos):
+            info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.pred_enabled:
+            # k=1: 用 o_{t+1} 在同一次 step 调用内闭环验证 (与 AlfWorld 同流程)
+            admissible_commands = self.envs.get_admissible_commands
+            for i in range(len(text_obs)):
+                parsed = parsed_predictions[i]
+                if parsed is not None:
+                    self.memory.record_prediction(i, self._turn, prediction_to_features(parsed))
+                    accuracy, _ = self.memory.verify_prediction(
+                        env_idx=i, turn=self._turn,
+                        feature_extractor=self.feature_extractor,
+                        actual_obs=text_obs[i],
+                        actual_actions=admissible_commands[i],
+                        actual_info=infos[i],
+                    )
+                else:
+                    accuracy = 0.0
+                pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
+                infos[i]['pred_accuracy'] = accuracy
+                infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_parse_valid'] = parsed is not None
+                infos[i]['pred_f1_visible_objects'] = self._visible_objects_f1(
+                    parsed, text_obs[i], admissible_commands[i], infos[i])
+            self._turn += 1
+
+        next_observations = {'text': full_text_obs, 'image': None, 'anchor': text_obs}
+        return next_observations, to_numpy(rewards), to_numpy(dones), infos
+
+    def _visible_objects_f1(self, parsed, actual_obs, actual_actions, actual_info) -> float:
+        if parsed is None or 'visible_objects' not in parsed:
+            return 0.0
+        extractor = next(e for e, _ in self.feature_extractor.extractors
+                         if e.feature_type == 'visible_objects')
+        predicted = prediction_to_features(parsed)['visible_objects']
+        actual = extractor.extract(actual_obs, actual_actions, actual_info)
+        return extractor.verify_score(predicted, actual)
+
+    def build_text_obs(self, text_obs: List[str], admissible_actions: List[List[str]], init: bool = False) -> List[str]:
+        if not self.pred_enabled:
+            template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS, HIDDENRULE_TEMPLATE
+        else:
+            template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS, HIDDENRULE_TEMPLATE_PS
+
+        postprocess_text_obs = []
+        if not init and self.config.env.history_length > 0:
+            memory_contexts, valid_lens = self.memory.fetch(
+                self.config.env.history_length, obs_key="text_obs", action_key="action")
+
+        for i in range(len(text_obs)):
+            reformatted = "\n ".join(f"'{s}'" for s in admissible_actions[i])
+            if init or self.config.env.history_length <= 0:
+                obs = template_no_his.format(
+                    current_observation=text_obs[i],
+                    admissible_actions=reformatted)
+            else:
+                obs = template.format(
+                    step_count=len(self.memory[i]),
+                    history_length=valid_lens[i],
+                    action_history=memory_contexts[i],
+                    current_step=len(self.memory[i]) + 1,
+                    current_observation=text_obs[i],
+                    admissible_actions=reformatted)
+            postprocess_text_obs.append(obs)
+        return postprocess_text_obs
+
+
 def make_envs(config):
     """
-    Create enviroments 
-    """ 
+    Create enviroments
+    """
     # check if config.env.rollout.n is an integer
     if not isinstance(config.env.rollout.n, int):
         raise ValueError("config.env.rollout.n should be an integer")
     group_n = config.env.rollout.n if config.env.rollout.n > 0 else 1
     resources_per_worker = OmegaConf.to_container(config.env.resources_per_worker, resolve=True)
+
+    if "hiddenrule" in config.env.env_name.lower():
+        from agent_system.environments.env_package.hiddenrule import build_hiddenrule_envs, hiddenrule_projection
+        hr_cfg = OmegaConf.to_container(config.env.get('hiddenrule', {}) or {}, resolve=True)
+        require_think = hr_cfg.pop('require_think_tags', True)
+        hr_cfg.pop('prediction', None)  # PS 采集 (HRG 版) 属后续阶段
+        if 'rule_families' in hr_cfg:
+            hr_cfg['rule_families'] = tuple(hr_cfg['rule_families'])
+        if 'max_steps' not in hr_cfg:
+            hr_cfg['max_steps'] = config.env.max_steps
+        _envs = build_hiddenrule_envs(seed=config.env.seed, env_num=config.data.train_batch_size,
+                                      group_n=group_n, is_train=True,
+                                      resources_per_worker=resources_per_worker, env_kwargs=hr_cfg)
+        _val_envs = build_hiddenrule_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size,
+                                          group_n=1, is_train=False,
+                                          resources_per_worker=resources_per_worker, env_kwargs=hr_cfg)
+        projection_f = partial(hiddenrule_projection, require_think=require_think)
+        envs = HiddenRuleEnvironmentManager(_envs, projection_f, config)
+        val_envs = HiddenRuleEnvironmentManager(_val_envs, projection_f, config)
+        return envs, val_envs
 
     if "search" in config.env.env_name.lower():
         from agent_system.environments.env_package.search import build_search_envs, search_projection

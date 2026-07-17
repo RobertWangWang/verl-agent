@@ -304,3 +304,16 @@ def test_true_note_reveals_rule():
     env.state = replace(env.state, room=true_note.room)
     obs, _, _, info = env.step(f"read {true_note.name}")
     assert info["rule_text"] in obs
+
+
+def test_case_insensitive_action_matching():
+    """回归: projection 会把动作转小写,机关名含大写 (lever_E) — 环境必须大小写不敏感
+    (HRG-d 首跑 0/32 事故)"""
+    rule = Rule(family="count", device="button_D", n=1)
+    world = make_fixture_world(rule)
+    state = initial_state(world)
+    new_state, _, valid = transition(world, state, "press button_d")  # 全小写
+    assert valid
+    assert new_state.progress.latched
+    new_state2, _, valid2 = transition(world, new_state, "TOGGLE LEVER_A")  # 全大写
+    assert valid2
