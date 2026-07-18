@@ -77,7 +77,7 @@ Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**
 - **Qwen3-4B ALFWorld baseline final** (8×RTX Pro 6000, actual config 8/32/4 = 32 traj/step): 150/150 in ~18h, zero crashes; ~315 traj/h (P0 gate passed 2.1×); train success ~24%→~59%; val last-6 mean **≈50%** (peak 65.6% @125). PS arm (`qwen3_4b_ps_grpo`, util 0.85, own ckpt dir) running from scratch. Baseline step-150 ckpt backed up on a third machine (user-managed). See `research_logs/2026-07-17_qwen3_4b_alfworld.md` §5–6.
 - **Qwen3-8B ALFWorld baseline** (8×RTX 6000D, same 8/32/4): running healthy ~590s/step (~24h total); PS queue armed with dedicated ckpt dir.
 - **Qwen3-1.7B ALFWorld pair** (local 2×5090, same 8/32/4): baseline running + PS auto-queue armed — completes the 1.7B→4B→8B scale ladder for the adjudicator table.
-- Entropy across Qwen3 scales: 1.7B 0.19 → 4B 0.141 → **8B ~0.20** — the sharpens-with-scale trend does NOT continue at 8B.
+- **Scale-ladder interim findings** (aligned step-0–25 window, all 8/32/4 seed 0; `research_logs/2026-07-18_scale_ladder_baselines.md`): early ordering is NON-monotonic — 4B (24.5% mean) > 8B (20.3%) > 1.7B (10.9%); 8B has no zero-shot advantage but the steepest learning slope (train 69–72% by step ~37) — "scale buys learning slope, not zero-shot prior". Entropy: 1.7B 0.19 → 4B 0.141 → **8B 0.19–0.22 stable** (sharpening trend breaks at 8B; high entropy co-occurs with fast learning → group-diversity mechanism). Mirror warning: the 4B **PS arm's** entropy dropped below 0.1 (motivates the λ-cosine-anneal ablation R36).
 
 Compute justification memos (8-GPU necessity, measured-data based): `docs/8gpu_compute_justification.md` (CN) / `_en.md` (EN).
 
