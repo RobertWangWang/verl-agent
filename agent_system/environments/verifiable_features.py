@@ -713,6 +713,41 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
     return features
 
 
+def gold_predict_string(actual_features: Dict[str, VerifiableFeature],
+                        include_device_states: bool = False) -> str:
+    """
+    S6 监督辅助损失臂 (docs/ps_grpo_integration_design.md §8.1): 从 o_{t+1} 的实际
+    特征拼"事后正确"的 <predict> 块内文本。字段顺序与 PS 模板指令一致。
+
+    一致性不变量 (test_s6_gold_predict.py): parse_predict_block(gold) 后对同一
+    actual_features 计 compute_reward 恒为 1.0 —— 监督目标与 RL 奖励目标严格同源。
+    """
+    parts = []
+    if 'location_change' in actual_features:
+        value = actual_features['location_change'].value
+        parts.append(f"next_location: {value if value else 'none'}")
+    if 'objects_visible' in actual_features:
+        seen = actual_features['objects_visible'].value.get('seen', [])
+        parts.append(f"objects_visible: {'yes' if seen else 'no'}")
+    if 'visible_objects' in actual_features:
+        objs = actual_features['visible_objects'].value.get('objects', [])
+        parts.append(f"visible_objects: {', '.join(objs) if objs else 'none'}")
+    if include_device_states and 'device_state' in actual_features:
+        pairs = actual_features['device_state'].value.get('pairs', [])
+        if pairs:
+            # 'set to N' 还原成模板指令的 'name=N' 词形; 解析侧会重新归一
+            rendered = ', '.join(
+                f"{name}={state[len('set to '):] if state.startswith('set to ') else state}"
+                for name, state in pairs)
+        else:
+            rendered = 'none'
+        parts.append(f"device_states: {rendered}")
+    if 'task_progress' in actual_features:
+        won = actual_features['task_progress'].value.get('won', False)
+        parts.append(f"task_done: {'yes' if won else 'no'}")
+    return '; '.join(parts)
+
+
 def create_alfworld_schema_extractor(
     feature_weights: Dict[str, float] = None
 ) -> CompositeFeatureExtractor:

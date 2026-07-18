@@ -391,6 +391,10 @@ class TrajectoryCollector:
             if infos[0].get('phi_coverage', None) is not None:
                 batch.non_tensor_batch['phi_coverage'] = np.array(
                     [info.get('phi_coverage', 0.0) for info in infos], dtype=np.float32)
+            # S6: 事后正确 predict 串 (监督辅助损失臂的教师信号, 设计 §8.1)
+            if 'gold_predict' in infos[0]:
+                batch.non_tensor_batch['gold_predict'] = np.array(
+                    [info.get('gold_predict', '') for info in infos], dtype=object)
 
             if 'tool_calling' in infos[0]:
                 tool_callings[active_masks] += np.array([info['tool_calling'] for info in infos], dtype=np.float32)[active_masks]

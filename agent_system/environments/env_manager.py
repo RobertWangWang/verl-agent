@@ -25,6 +25,7 @@ from agent_system.environments.prompts import *
 from agent_system.environments.verifiable_features import (
     create_alfworld_feature_extractor,
     create_alfworld_schema_extractor,
+    gold_predict_string,
     parse_predict_block,
     prediction_to_features,
     task_target_objects,
@@ -151,6 +152,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 f"unknown feature_protocol: {self.feature_protocol}"
             self.pred_feature_weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
                 if pred_cfg.get('feature_weights', None) is not None else None
+            # S6: 采集事后正确预测串 (监督辅助损失臂的教师信号, §8.1)
+            self.collect_gold = bool(pred_cfg.get('collect_gold', False))
             # lambda_pred=1.0: 环境侧产出未加权的 r_pred = Φ_t − Φ_{t−1}，
             # λ 缩放与退火由 trainer 端统一施加 (S2)
             self.memory = HybridMemory(
@@ -235,6 +238,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                     # 未给出该字段按 0 记 (不预测 = 不得分),与 parse_valid 分开观察。
                     infos[i]['pred_f1_visible_objects'] = self._visible_objects_f1(
                         parsed, text_obs[i], admissible_commands[i], infos[i])
+                if self.collect_gold:
+                    # S6: 与验证器同一套 extractors 拼事后正确 predict 串 (§8.1)
+                    actual_feats = self.feature_extractors[i].extract_all(
+                        text_obs[i], admissible_commands[i], infos[i])
+                    infos[i]['gold_predict'] = gold_predict_string(actual_feats)
             self._turn += 1
 
         next_observations = {'text': full_text_obs, 'image': image_obs, 'anchor': text_obs}
@@ -711,6 +719,8 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 if pred_cfg.get('feature_weights', None) is not None else None
             # C-sweep: predict 块是否含 device_states 字段 (模板 _DEV 变体)
             self.predict_device_states = bool(pred_cfg.get('predict_device_states', False))
+            # S6: 采集事后正确预测串 (监督辅助损失臂的教师信号, §8.1)
+            self.collect_gold = bool(pred_cfg.get('collect_gold', False))
             # HRG 只有 schema 协议 (环境本身无任务变体); lambda_pred=1.0 同 AlfWorld:
             # 环境侧产出未加权 r_pred,λ 与退火由 trainer 端施加
             self.feature_extractor = create_hiddenrule_schema_extractor(feature_weights=weights)
@@ -774,6 +784,13 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 infos[i]['pred_parse_valid'] = parsed is not None
                 infos[i]['pred_f1_visible_objects'] = self._visible_objects_f1(
                     parsed, text_obs[i], admissible_commands[i], infos[i])
+                if self.collect_gold:
+                    # S6: 用与验证同一 extractor (含 C-sweep 的 mask 视图) 拼 gold 串
+                    actual_feats = extractor.extract_all(
+                        text_obs[i], admissible_commands[i], infos[i])
+                    infos[i]['gold_predict'] = gold_predict_string(
+                        actual_feats,
+                        include_device_states=self.predict_device_states)
             self._turn += 1
 
         next_observations = {'text': full_text_obs, 'image': None, 'anchor': text_obs}
