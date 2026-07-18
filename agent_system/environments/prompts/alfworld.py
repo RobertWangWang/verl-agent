@@ -91,3 +91,23 @@ Your admissible actions of the current situation are: [{admissible_actions}].
 Now it's your turn to take an action.
 You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
 """ + _ALFWORLD_PREDICT_INSTRUCTION_SCHEMA + "\n"
+
+# 锚点 QA 对照臂 (设计 §9): think 与 action 之间要求对历史窗口内 anchor 步的
+# 回忆 <recall> 块。anchor 步号与历史区 "Observation k" 编号一致。
+# anchor 不可用时 (当前步 - lag < 1) 由 manager 回落基线模板。
+_ALFWORLD_RECALL_INSTRUCTION = (
+    "After your reasoning, answer this memory check about an earlier step, enclosed within <recall> </recall> tags in exactly this format:\n"
+    "<recall>location: [the location you were at in step {anchor_step}, e.g. 'cabinet 2', or 'none' if no location was shown]; "
+    "objects: [comma-separated object names visible in step {anchor_step}'s observation, or 'none']</recall>\n"
+    "Finally, you should choose an admissible action for current step and present it within <action> </action> tags."
+)
+
+ALFWORLD_TEMPLATE_AQA = """
+You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+""" + _ALFWORLD_RECALL_INSTRUCTION + "\n"

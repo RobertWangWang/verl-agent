@@ -319,6 +319,11 @@ env:
       feature_protocol: schema # schema (v0.2 任务无关协议,默认) | task_targets (v0.1 兼容,复现 pilot 用)
       feature_weights: null # null = 各协议的默认权重 (schema: location 0.5/objects_visible 0.5; task_targets: 见 create_alfworld_feature_extractor)
       collect_gold: False # S6 监督辅助损失臂: 采集事后正确 predict 串 (设计 §8.1)
+    anchor_qa: # 锚点 QA 对照臂 (设计 §9): 回忆监督; 与 prediction.enable 互斥
+      enable: False # 臂配方: enable=True + algorithm.pred_reward.enable=True (λ 与 PS 臂对齐)
+      lag: 2 # anchor 步 = 当前步 - lag (需 ≤ env.history_length, 窗口外信息结构上不可及)
+      weight_location: 0.5 # 回忆评分权重: 位置精确匹配
+      weight_objects: 0.5 # 回忆评分权重: 可见物 F1
   search:
     log_requests: false
     search_url: "http://127.0.0.1:8000/retrieve" # also support multiple urls: ["http://127.0.0.1:8000/retrieve", "http://127.0.0.1:8001/retrieve"]

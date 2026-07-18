@@ -163,6 +163,18 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             )
         else:
             self.memory = SimpleMemory()
+        # 锚点 QA 对照臂 (设计 §9): 回忆监督,与 prediction 互斥 (一个 prompt 一个辅助块)
+        aqa_cfg = alfworld_cfg.get('anchor_qa', None) if alfworld_cfg is not None else None
+        self.aqa_enabled = bool(aqa_cfg is not None and aqa_cfg.get('enable', False))
+        if self.aqa_enabled:
+            assert not self.pred_enabled, "anchor_qa 与 prediction 互斥"
+            from agent_system.memory.anchor_qa import AnchorQARecorder
+            self.aqa_recorder = AnchorQARecorder(
+                create_alfworld_schema_extractor(),
+                lag=int(aqa_cfg.get('lag', 2)),
+                weight_location=float(aqa_cfg.get('weight_location', 0.5)),
+                weight_objects=float(aqa_cfg.get('weight_objects', 0.5)),
+            )
         super().__init__(envs, projection_f, config)
 
     def reset(self, kwargs):
@@ -173,6 +185,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         self.tasks = []
         self.pre_text_obs = text_obs
         self.extract_task(text_obs)
+        if self.aqa_enabled:
+            self.aqa_recorder.reset(len(text_obs))
+            adm = self.envs.get_admissible_commands
+            for i in range(len(text_obs)):
+                self.aqa_recorder.record(i, 1, text_obs[i], adm[i], infos[i])
 
         if self.pred_enabled:
             self._turn = 0
@@ -198,6 +215,10 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         if self.pred_enabled:
             # 从 response 中解析本步 <predict> 预测 (在 projection 之前，text_actions 是完整文本)
             parsed_predictions = [parse_predict_block(t) for t in text_actions]
+        if self.aqa_enabled:
+            # 锚点 QA: 回忆答案对应本步 prompt (步号 T = 已存历史 + 1),入队前先定格
+            aqa_cur_steps = [len(self.memory[i]) + 1 for i in range(len(text_actions))]
+            parsed_recalls = [parse_recall_block(t) for t in text_actions]
 
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
@@ -211,6 +232,24 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.aqa_enabled:
+            # 评分对锚点存档即时闭环 (不依赖下一观测);奖励复用 pred_reward 注入通道,
+            # 直接正确率 (canonical anchor-QA, 不做势函数) —— 设计 §9
+            adm = self.envs.get_admissible_commands
+            for i in range(len(text_obs)):
+                anchor = self.aqa_recorder.anchor_step(aqa_cur_steps[i])
+                if anchor is not None:
+                    score = self.aqa_recorder.score(i, anchor, parsed_recalls[i])
+                    infos[i]['pred_parse_valid'] = parsed_recalls[i] is not None
+                else:
+                    # 前 lag 步模板未提问: 记 0 奖励、解析视为有效 (非模型之过)
+                    score = 0.0
+                    infos[i]['pred_parse_valid'] = True
+                infos[i]['pred_accuracy'] = score
+                infos[i]['pred_reward'] = score
+                # 存档新观测 (对应下一步 prompt 的步号 T+1)
+                self.aqa_recorder.record(i, aqa_cur_steps[i] + 1, text_obs[i], adm[i], infos[i])
 
         if self.pred_enabled:
             # k=1: 预测在同一次 step 调用内即可用 o_{t+1} 闭环验证
@@ -300,14 +339,23 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                     admissible_actions=reformatted_admissible_actions
                 )
             else:
-                obs = template.format(
+                current_step = len(self.memory[i]) + 1
+                tmpl = template
+                anchor = None
+                if getattr(self, 'aqa_enabled', False):
+                    # 锚点可用时切 AQA 模板;前 lag 步回落基线模板 (设计 §9)
+                    anchor = self.aqa_recorder.anchor_step(current_step)
+                    if anchor is not None:
+                        tmpl = ALFWORLD_TEMPLATE_AQA
+                obs = tmpl.format(
                     task_description=self.tasks[i],
                     step_count=len(self.memory[i]),
                     history_length=valid_lens[i],
                     action_history=memory_contexts[i],
-                    current_step=len(self.memory[i]) + 1,
+                    current_step=current_step,
                     current_observation=text_obs[i],
-                    admissible_actions=reformatted_admissible_actions
+                    admissible_actions=reformatted_admissible_actions,
+                    anchor_step=anchor
                 )
 
             postprocess_text_obs.append(obs)

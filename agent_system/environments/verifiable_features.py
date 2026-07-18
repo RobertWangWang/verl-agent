@@ -713,6 +713,45 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
     return features
 
 
+_RECALL_BLOCK_RE = re.compile(r'<recall>(.*?)</recall>', re.DOTALL | re.IGNORECASE)
+
+
+def parse_recall_block(text: str, object_vocab: Optional[Set[str]] = None) -> Optional[Dict[str, Any]]:
+    """
+    锚点 QA 臂 (设计 §9): 解析 <recall>location: ...; objects: ...</recall>。
+
+    - location: "none" 系 → None (anchor 观测无位置行时的正确答案);
+    - objects: 逗号分隔物体名,按词表过滤; "none" → []。
+    缺块或无可识别字段 → None (记解析失败)。
+    """
+    if not text:
+        return None
+    match = _RECALL_BLOCK_RE.search(text)
+    if match is None:
+        return None
+    if object_vocab is None:
+        object_vocab = ALFWORLD_OBJECT_VOCAB
+
+    parsed: Dict[str, Any] = {}
+    for part in match.group(1).split(';'):
+        if ':' not in part:
+            continue
+        key, value = part.split(':', 1)
+        key = key.strip().lower()
+        value = value.strip().lower().strip("'\"")
+        if key == 'location':
+            parsed['location'] = None if value in _NONE_VALUES else value
+        elif key == 'objects':
+            cleaned = value.strip('[]')
+            if cleaned in _NONE_VALUES:
+                parsed['objects'] = []
+            else:
+                objs = [t for t in re.findall(r'[a-z][a-z_0-9]*', cleaned)
+                        if t in object_vocab]
+                parsed['objects'] = sorted(set(objs))
+    return parsed if parsed else None
+
+
 def gold_predict_string(actual_features: Dict[str, VerifiableFeature],
                         include_device_states: bool = False) -> str:
     """
