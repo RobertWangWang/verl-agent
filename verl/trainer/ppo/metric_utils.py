@@ -203,6 +203,14 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> Dict[str,
             if "pred_f1_visible_objects" in batch.non_tensor_batch
             else {}
         ),
+        # C-sweep (HRG): measured coverage C of the masked Phi family (Fig.1 x-axis)
+        **(
+            {
+                "episode/phi_coverage/mean": float(np.asarray(batch.non_tensor_batch["phi_coverage"], dtype=np.float32).mean()),
+            }
+            if "phi_coverage" in batch.non_tensor_batch
+            else {}
+        ),
     }
     return metrics
 

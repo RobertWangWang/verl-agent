@@ -330,12 +330,13 @@ env:
     p_obs: 1.0 # 部分可观测度 (主图 2/3 的旋钮)
     obs_flip_prob: 0.0 # 观测翻转噪声 (aleatoric)
     n_sensor_channels: 0 # noisy-TV 干扰通道数
-    coverage_level: 1.0 # 特征覆盖度档位 (主图 1; 接入 prediction 后用于裁剪 Φ)
+    coverage_level: 1.0 # 特征覆盖度档位 (主图 1): <1.0 时 env 侧贪心校准字段 mask 裁剪预测目标 Φ, 实测 C 走 episode/phi_coverage/mean
     require_think_tags: True # Qwen3 + enable_thinking=False 时设 False
     prediction: # PS-GRPO 预测充分性采集 (与 env.alfworld.prediction 同构; HRG 仅 schema 协议)
       enable: False
       horizon: 1
       feature_weights: null # null = features.py 默认 (location 0.5 / objects_visible 0.5)
+      predict_device_states: False # C-sweep: predict 块加 device_states 字段 (配 feature_weights 里 device_state>0; C-sweep 臂需把 objects_visible 权重设 0)
   sokoban:
     dim_room: [6, 6]
     num_boxes: 1

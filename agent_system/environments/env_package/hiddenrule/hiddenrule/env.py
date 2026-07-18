@@ -187,6 +187,11 @@ def transition(world: World, state: CoreState, action: str) -> Tuple[CoreState, 
 class HiddenRuleEnv:
     """gym 风格单环境。reset(seed) 完全确定性。"""
 
+    # coverage_level < 1.0 时的 (mask, C) 缓存: 同 seed 同 config 的 world 完全确定,
+    # 组环境语义下同组 worker 各自算一遍但结果一致; 缓存防同 worker 内 seed 复用重算
+    _coverage_cache: Dict[int, Tuple[Tuple[str, ...], float]] = {}
+    _COVERAGE_CACHE_MAX = 256
+
     def __init__(self, config: Optional[HRGConfig] = None):
         self.config = config or HRGConfig()
         self.world: Optional[World] = None
@@ -194,6 +199,8 @@ class HiddenRuleEnv:
         self.steps = 0
         self._oracle_steps: Optional[int] = None
         self._noise_rng: Optional[random.Random] = None
+        self._phi_mask: Optional[Tuple[str, ...]] = None
+        self._phi_coverage: Optional[float] = None
 
     def reset(self, seed: int) -> Tuple[str, Dict]:
         from .oracle import solve  # 延迟导入避免环
@@ -204,9 +211,32 @@ class HiddenRuleEnv:
         self._noise_rng = random.Random(seed ^ 0x5EED11)
         solution = solve(self.world)
         self._oracle_steps = len(solution) if solution is not None else -1
+        # C-sweep (主图 1): coverage_level < 1.0 时把预测目标 Φ 裁剪到贪心校准的
+        # 字段 mask; =1.0 走零成本路径 (不枚举状态空间, mask=None 表示不裁剪)
+        if self.config.coverage_level < 1.0 - 1e-9:
+            self._phi_mask, self._phi_coverage = self._calibrate_phi_mask(seed)
+        else:
+            self._phi_mask, self._phi_coverage = None, None
         obs = render_observation(self.world, self.state, "You enter the rooms.",
                                  self.config, rng=self._noise_rng)
         return obs, self._info(action_valid=True)
+
+    def _calibrate_phi_mask(self, seed: int) -> Tuple[Tuple[str, ...], float]:
+        from .coverage import calibrate_masks, coverage, enumerate_reachable, sweep_fields
+        cached = HiddenRuleEnv._coverage_cache.get(seed)
+        if cached is not None:
+            return cached
+        level = self.config.coverage_level
+        states = enumerate_reachable(self.world)
+        ladder = calibrate_masks(self.world, targets=(level,), states=states,
+                                 fields=sweep_fields(self.world))
+        mask = ladder[level]
+        achieved = coverage(self.world, mask, states=states)
+        result = (tuple(sorted(mask)), round(achieved, 4))
+        if len(HiddenRuleEnv._coverage_cache) >= HiddenRuleEnv._COVERAGE_CACHE_MAX:
+            HiddenRuleEnv._coverage_cache.clear()
+        HiddenRuleEnv._coverage_cache[seed] = result
+        return result
 
     def step(self, action: str) -> Tuple[str, float, bool, Dict]:
         assert self.world is not None, "call reset() first"
@@ -229,6 +259,9 @@ class HiddenRuleEnv:
             "is_action_valid": action_valid,
             "steps": self.steps,
             "oracle_steps": self._oracle_steps,
+            # C-sweep: coverage_level<1 时为 (字段 mask, 实测 C); 否则 (None, None)
+            "phi_mask": list(self._phi_mask) if self._phi_mask is not None else None,
+            "phi_coverage": self._phi_coverage,
             "rule_family": world.rule.family,
             "rule_text": world.rule.describe(world.state_word),
             # 特权信息 (只进 info,绝不进观测): belief 探针 / MI / 归因用

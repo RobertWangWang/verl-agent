@@ -152,16 +152,27 @@ def coverage(world: World, mask: FrozenSet[str],
     return min(1.0, mi / h_s)
 
 
+def sweep_fields(world: World) -> List[str]:
+    """
+    C-sweep 的字段池: room + 有状态机关读数。
+    门字段被排除 —— predict 块没有对应的可奖励特征 (design doc §2.1: 测得的 C
+    必须定义在与预测奖励相同的 Φ 家族上,否则 x 轴失真)。
+    """
+    return ['room'] + [f'device:{d.name}' for d in world.stateful_devices]
+
+
 def calibrate_masks(world: World,
                     targets: Tuple[float, ...] = (0.2, 0.4, 0.6, 0.8, 1.0),
-                    states: Optional[List[CoreState]] = None) -> Dict[float, FrozenSet[str]]:
+                    states: Optional[List[CoreState]] = None,
+                    fields: Optional[List[str]] = None) -> Dict[float, FrozenSet[str]]:
     """
     贪心构造 coverage ladder: 从空集起,每次加入使 C 增益最大的字段,
     首次达到各目标档位时记录当时的 mask。保证 ladder 单调。
+    fields 限定候选字段池 (默认全字段; C-sweep 用 sweep_fields)。
     """
     if states is None:
         states = enumerate_reachable(world)
-    remaining = set(all_fields(world))
+    remaining = set(fields) if fields is not None else set(all_fields(world))
     mask: set = set()
     ladder: Dict[float, FrozenSet[str]] = {}
     current_c = 0.0
@@ -181,8 +192,8 @@ def calibrate_masks(world: World,
         while targets_left and current_c >= targets_left[0] - 1e-9:
             ladder[targets_left.pop(0)] = frozenset(mask)
 
-    # 达不到的高档位 (如 seq/count 的 latch 本质不可观测) 用全字段兜底
-    full = frozenset(all_fields(world))
+    # 达不到的高档位 (如 seq/count 的 latch 本质不可观测) 用池内全字段兜底
+    full = frozenset(fields) if fields is not None else frozenset(all_fields(world))
     for t in targets_left:
         ladder[t] = full
     return ladder

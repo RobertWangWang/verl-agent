@@ -709,6 +709,8 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
         if self.pred_enabled:
             weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
                 if pred_cfg.get('feature_weights', None) is not None else None
+            # C-sweep: predict 块是否含 device_states 字段 (模板 _DEV 变体)
+            self.predict_device_states = bool(pred_cfg.get('predict_device_states', False))
             # HRG 只有 schema 协议 (环境本身无任务变体); lambda_pred=1.0 同 AlfWorld:
             # 环境侧产出未加权 r_pred,λ 与退火由 trainer 端施加
             self.feature_extractor = create_hiddenrule_schema_extractor(feature_weights=weights)
@@ -746,15 +748,20 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
             info['is_action_valid'] = to_numpy(valids[i])
 
         if self.pred_enabled:
+            from agent_system.environments.env_package.hiddenrule.features import PhiMaskedExtractor
             # k=1: 用 o_{t+1} 在同一次 step 调用内闭环验证 (与 AlfWorld 同流程)
             admissible_commands = self.envs.get_admissible_commands
             for i in range(len(text_obs)):
                 parsed = parsed_predictions[i]
+                # C-sweep: env 侧按 coverage_level 校准的字段 mask (None = 不裁剪)
+                phi_mask = infos[i].get('phi_mask', None)
+                extractor = self.feature_extractor if phi_mask is None \
+                    else PhiMaskedExtractor(self.feature_extractor, phi_mask)
                 if parsed is not None:
                     self.memory.record_prediction(i, self._turn, prediction_to_features(parsed))
                     accuracy, _ = self.memory.verify_prediction(
                         env_idx=i, turn=self._turn,
-                        feature_extractor=self.feature_extractor,
+                        feature_extractor=extractor,
                         actual_obs=text_obs[i],
                         actual_actions=admissible_commands[i],
                         actual_info=infos[i],
@@ -784,6 +791,11 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
     def build_text_obs(self, text_obs: List[str], admissible_actions: List[List[str]], init: bool = False) -> List[str]:
         if not self.pred_enabled:
             template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS, HIDDENRULE_TEMPLATE
+        elif getattr(self, 'predict_device_states', False):
+            from agent_system.environments.prompts.hiddenrule import (
+                HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV, HIDDENRULE_TEMPLATE_PS_DEV,
+            )
+            template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV, HIDDENRULE_TEMPLATE_PS_DEV
         else:
             template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS, HIDDENRULE_TEMPLATE_PS
 

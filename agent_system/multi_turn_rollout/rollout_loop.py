@@ -387,6 +387,10 @@ class TrajectoryCollector:
             if 'pred_f1_visible_objects' in infos[0]:
                 batch.non_tensor_batch['pred_f1_visible_objects'] = np.array(
                     [info['pred_f1_visible_objects'] for info in infos], dtype=np.float32)
+            # C-sweep: env 侧实测的 Φ 覆盖度 (coverage_level<1 时非 None; 主图 1 的 x 轴)
+            if infos[0].get('phi_coverage', None) is not None:
+                batch.non_tensor_batch['phi_coverage'] = np.array(
+                    [info.get('phi_coverage', 0.0) for info in infos], dtype=np.float32)
 
             if 'tool_calling' in infos[0]:
                 tool_callings[active_masks] += np.array([info['tool_calling'] for info in infos], dtype=np.float32)[active_masks]

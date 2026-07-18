@@ -121,8 +121,8 @@ class HRGVisibleObjectsF1Feature(BaseFeatureExtractor):
 
 
 class HRGDeviceStateFeature(BaseFeatureExtractor):
-    """(device, state) 二元组集合 —— predict 块暂不预测,进特征池供覆盖度/探针 (对应
-    ALFWorld 的 receptacle_state 槽位)"""
+    """(device, state) 二元组集合,C-sweep 的主预测目标 (predict 块 device_states 字段;
+    对应 ALFWorld 的 receptacle_state 槽位)。F1 部分分,与 visible_objects 同风格。"""
 
     feature_type = 'device_state'
 
@@ -139,6 +139,21 @@ class HRGDeviceStateFeature(BaseFeatureExtractor):
         return set(map(tuple, predicted.value.get('pairs', []))) <= \
             set(map(tuple, actual.value.get('pairs', [])))
 
+    def verify_score(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> float:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        pred = set(map(tuple, predicted.value.get('pairs', [])))
+        act = set(map(tuple, actual.value.get('pairs', [])))
+        if not pred and not act:
+            return 1.0
+        if not pred or not act:
+            return 0.0
+        tp = len(pred & act)
+        precision, recall = tp / len(pred), tp / len(act)
+        if precision + recall == 0:
+            return 0.0
+        return 2 * precision * recall / (precision + recall)
+
 
 class HRGTaskProgressFeature(BaseFeatureExtractor):
     """vault 是否已开 (info['won']);对应 predict 块 task_done,权重 0 仅日志"""
@@ -153,6 +168,60 @@ class HRGTaskProgressFeature(BaseFeatureExtractor):
         if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
             raise ValueError("Feature type mismatch")
         return predicted.value.get('won', False) == actual.value.get('won', False)
+
+
+def apply_phi_mask(features: Dict[str, VerifiableFeature],
+                   mask: List[str]) -> Dict[str, VerifiableFeature]:
+    """
+    按覆盖度字段 mask 裁剪特征字典 (C-sweep, design doc §2.1)。
+    mask 字段词表来自 coverage.sweep_fields: 'room' / 'device:<name>'。
+
+    - 'room' 不在 mask → 丢弃 location_change;
+    - device_state 的 pairs 过滤到 mask 内的机关名; mask 无任何 device 字段 → 整个丢弃;
+    - 其余特征 (objects_visible / visible_objects 探针 / task_progress) 不受 mask 管辖,
+      由 feature_weights 治理 —— C-sweep 臂必须把它们的权重设 0 (探针除外,本就 0),
+      否则测得的 C 与被奖励的 Φ 家族不一致。
+    """
+    allowed_devices = {f.split(':', 1)[1] for f in mask if f.startswith('device:')}
+    out: Dict[str, VerifiableFeature] = {}
+    for ftype, feat in features.items():
+        if ftype == 'location_change':
+            if 'room' in mask:
+                out[ftype] = feat
+        elif ftype == 'device_state':
+            if allowed_devices:
+                pairs = [p for p in feat.value.get('pairs', [])
+                         if p[0] in allowed_devices]
+                out[ftype] = VerifiableFeature(feature_type=ftype, value={'pairs': pairs})
+        else:
+            out[ftype] = feat
+    return out
+
+
+class PhiMaskedExtractor:
+    """
+    组合提取器的 Φ-mask 视图: extract/verify/compute 全部委托底层提取器,
+    仅在验证与计分前对 predicted 与 actual 两侧同步施加 apply_phi_mask。
+    每 env 每 episode 的 mask 恒定 (world 级),包装对象可即用即建。
+    """
+
+    def __init__(self, base: CompositeFeatureExtractor, mask: List[str]):
+        self._base = base
+        self._mask = mask
+
+    @property
+    def extractors(self):
+        return self._base.extractors
+
+    def extract_all(self, observation, admissible_actions, info):
+        return apply_phi_mask(
+            self._base.extract_all(observation, admissible_actions, info), self._mask)
+
+    def verify_all(self, predicted, actual):
+        return self._base.verify_all(apply_phi_mask(predicted, self._mask), actual)
+
+    def compute_reward(self, predicted, actual):
+        return self._base.compute_reward(apply_phi_mask(predicted, self._mask), actual)
 
 
 def create_hiddenrule_schema_extractor(feature_weights: Dict[str, float] = None) -> CompositeFeatureExtractor:

@@ -660,6 +660,22 @@ def parse_predict_block(text: str, object_vocab: Optional[Set[str]] = None) -> O
                 parsed['task_done'] = True
             elif value in _NO_VALUES:
                 parsed['task_done'] = False
+        elif key == 'device_states':
+            # C-sweep (HRG): "lever_a=up, dial_b=2" / "none"。
+            # 状态归一到观测渲染词形: 纯数字 d → "set to d" (dial 渲染格式)
+            cleaned = value.strip('[]')
+            if cleaned in _NONE_VALUES:
+                parsed['device_states'] = []
+            else:
+                pairs = []
+                for m in re.finditer(
+                        r'((?:lever|dial)_[a-h])\s*(?:=|:|\bis\b|\bto\b)?\s*'
+                        r'(up|down|pressed|set to \d+|\d+)', cleaned):
+                    name, state = m.group(1), m.group(2)
+                    if state.isdigit():
+                        state = f'set to {state}'
+                    pairs.append((name, state))
+                parsed['device_states'] = sorted(set(pairs))
 
     return parsed if parsed else None
 
@@ -689,6 +705,10 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
     if 'task_done' in parsed:
         features['task_progress'] = VerifiableFeature(
             feature_type='task_progress', value={'won': parsed['task_done']}
+        )
+    if 'device_states' in parsed:
+        features['device_state'] = VerifiableFeature(
+            feature_type='device_state', value={'pairs': parsed['device_states']}
         )
     return features
 

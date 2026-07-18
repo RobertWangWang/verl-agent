@@ -67,3 +67,18 @@ Your admissible actions of the current situation are: [{admissible_actions}].
 Now it's your turn to take an action.
 You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
 """ + _HIDDENRULE_PREDICT_INSTRUCTION + "\n"
+
+# C-sweep 变体 (主图 1): predict 块加入 device_states 字段 —— 设备读数是覆盖度
+# 阶梯的主要字段维度,没有它 Φ 池只有 room/objects_visible,C 档位拉不开。
+# 门控: env.hiddenrule.prediction.predict_device_states=True。
+_HIDDENRULE_PREDICT_INSTRUCTION_DEV = _HIDDENRULE_PREDICT_INSTRUCTION.replace(
+    "task_done:",
+    "device_states: [comma-separated device readings you expect in the next observation, "
+    "e.g. 'lever_a=up, dial_b=2', or 'none']; "
+    "task_done:",
+)
+
+HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV = HIDDENRULE_TEMPLATE_NO_HIS_PS.replace(
+    _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_DEV)
+HIDDENRULE_TEMPLATE_PS_DEV = HIDDENRULE_TEMPLATE_PS.replace(
+    _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_DEV)
