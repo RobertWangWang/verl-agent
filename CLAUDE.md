@@ -63,9 +63,15 @@ Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**
 - TextWorld env workers leak ~1MB/step/worker RAM (no plateau); the local box has a persistent 256GB NVMe swapfile absorbing the cold pages. Restart-on-checkpoint playbook (backup plan) in `research_logs/2026-07-14_ps_grpo_s3_baseline.md`.
 - verl's `perf/max_memory_*_gb` metrics are summed across GPUs, not per-card.
 
-**Results so far:** Qwen2.5-1.5B GRPO ALFWorld baseline (2×RTX 5090, 150 steps, ~37.5 h) — final val success **67.2%** (checkpoints in `checkpoints/verl_agent_alfworld/grpo_baseline_32gb/`; weakness: look_at_obj_in_light 0%). Qwen3-1.7B smokes green under the schema protocol. **Next:** Qwen3-4B GRPO baseline + schema-compliant PS arm on the 8×RTX Pro 6000 server via `examples/grpo_trainer/run_alfworld_qwen3_4b_8gpu.sh`; locally HRG-c (verl integration) and S4c (coverage proxy).
+**Results so far:**
+- Qwen2.5-1.5B GRPO ALFWorld baseline (2×5090, 150 steps): final val **67.2%** (weakness: look_at_obj_in_light 0%).
+- HRG pilot (Qwen3-1.7B, 3 arms serial on 2×5090): **arm A** (pure GRPO) full-budget negative — never left the 7.7% random floor (gradient starvation, grad_norm 0.05); **arm B** (PS, location/visibility Φ) — prediction saturates to 0.99 in ~20 steps but success stays floor: empirical instance of the coverage-dependence counterexample (Φ doesn't cover the rule latent) — first real anchor for the C×gain narrative; **arm C** (task_done upweighted, rule-relevant target) queued. See `research_logs/2026-07-17_hrg_pilot_grpo_vs_ps.md`.
+- Qwen3-4B ALFWorld on the 8×RTX Pro 6000 server: **P0 throughput gate passed 8.5×** (~1280 traj/h, update 31–44s no-offload), baseline running; PS arm auto-queued via `queue_alfworld_qwen3_4b_ps.sh`. See `research_logs/2026-07-17_qwen3_4b_alfworld.md`.
+- Watch item across Qwen3 scales: initial entropy sharpens with size (1.7B 0.19 → 4B 0.141); group-diversity risk for GRPO.
 
-Scripts: `run_alfworld_mini.sh` (2×5090 smoke; fp32 actor memory math in comments), `run_alfworld_full_32gb.sh` (2×5090 full run), `run_alfworld_qwen3_4b_8gpu.sh` (8×96GB server, no offload).
+Compute justification memos (8-GPU necessity, measured-data based): `docs/8gpu_compute_justification.md` (CN) / `_en.md` (EN).
+
+Scripts: `run_alfworld_mini.sh` / `run_hiddenrule_mini.sh` (2×5090 smokes), `run_alfworld_full_32gb.sh` (2×5090 full), `run_alfworld_qwen3_4b_8gpu.sh` + `queue_alfworld_qwen3_4b_ps.sh` (8×96GB server).
 
 ## Configuration
 
