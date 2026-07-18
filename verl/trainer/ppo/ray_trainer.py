@@ -1320,6 +1320,45 @@ class RayPPOTrainer:
                         actor_output_metrics = reduce_metrics(actor_output.meta_info["metrics"])
                         metrics.update(actor_output_metrics)
 
+                        # S6b: 监督辅助损失臂 — gold predict 串的教师强制第二遍 update
+                        # (docs/ps_grpo_integration_design.md §8.2; 独立通道,不进
+                        # compute_advantage/episode 指标,与 GRPO 组内对比天然隔离)
+                        aux_cfg = self.config.algorithm.get("aux_sft", None)
+                        if aux_cfg is not None and aux_cfg.get("enable", False) \
+                                and "gold_predict" in batch.non_tensor_batch:
+                            from agent_system.multi_turn_rollout.aux_sft import (
+                                apply_aux_sft_supervision,
+                                build_aux_sft_batch,
+                            )
+                            from verl.protocol import pad_dataproto_to_divisor
+                            with _timer("update_aux_sft", timing_raw):
+                                aux_batch = build_aux_sft_batch(
+                                    batch, self.tokenizer,
+                                    fraction=float(aux_cfg.get("fraction", 1.0)),
+                                    seed=self.global_steps,
+                                )
+                                if aux_batch is not None:
+                                    n_aux = len(aux_batch)
+                                    aux_batch, _pad = pad_dataproto_to_divisor(
+                                        aux_batch, self.actor_rollout_wg.world_size)
+                                    aux_logp = self.actor_rollout_wg.compute_log_prob(aux_batch)
+                                    if "entropys" in aux_logp.batch.keys():
+                                        aux_logp.batch.pop("entropys")
+                                    aux_batch = aux_batch.union(aux_logp)
+                                    aux_batch = apply_aux_sft_supervision(
+                                        aux_batch,
+                                        beta=float(aux_cfg.get("beta", 0.1)),
+                                        use_kl_loss=self.config.actor_rollout_ref.actor.use_kl_loss,
+                                    )
+                                    aux_batch.meta_info["multi_turn"] = \
+                                        self.config.actor_rollout_ref.rollout.multi_turn.enable
+                                    aux_output = self.actor_rollout_wg.update_actor(aux_batch)
+                                    metrics.update({
+                                        f"aux_sft/{k}": v for k, v in
+                                        reduce_metrics(aux_output.meta_info["metrics"]).items()
+                                    })
+                                    metrics["aux_sft/num_rows"] = n_aux
+
                     # Log rollout generations if enabled
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
                     if rollout_data_dir:

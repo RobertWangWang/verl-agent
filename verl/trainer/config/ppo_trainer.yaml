@@ -259,6 +259,10 @@ algorithm:
       style: constant # constant / linear / cosine
       final_ratio: 0.0 # 末期 λ = lambda * final_ratio
       total_steps: -1 # 退火总步数; <=0 时用 total_training_steps
+  aux_sft: # S6 监督辅助损失臂 (设计 §8.2); 与 pred_reward 互斥使用 (裁决者对照)
+    enable: False # 需 env.<env>.prediction.enable + collect_gold 采集 gold 串
+    beta: 0.1 # 教师强制 CE 权重 (经 PPO 通道的常数优势实现; 与 λ 同量级对齐)
+    fraction: 1.0 # 参与辅助更新的 step-sample 比例 (update 开销敏感时下采样)
   filter_groups: # DAPO from https://arxiv.org/abs/2503.14476
     enable: False
     max_num_gen_batches: 10
