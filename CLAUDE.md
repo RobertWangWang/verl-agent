@@ -60,18 +60,26 @@ Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**
 
 - Qwen3 + `enable_thinking=False` pre-injects an empty `<think>` block into the prompt side, so responses never contain `<think>` tags → set `env.alfworld.require_think_tags=False` for **all** Qwen3 runs, or valid_action_ratio is 0 by construction and every step eats the invalid penalty.
 - Run scripts consume `$1` (engine) then pass `$@` to Hydra — always give single-line commands; multi-line paste breakage has silently dropped overrides before.
-- TextWorld env workers leak ~1MB/step/worker RAM (no plateau); the local box has a persistent 256GB NVMe swapfile absorbing the cold pages. Restart-on-checkpoint playbook (backup plan) in `research_logs/2026-07-14_ps_grpo_s3_baseline.md`.
+- **Every experiment needs its own `trainer.default_local_dir`** — verl defaults to `resume_mode=auto`, so a PS arm pointed at the baseline's ckpt dir silently resumes the baseline's weights (bit us on the 4B server 2026-07-18). The 1.7B scripts derive both `experiment_name` and `default_local_dir` from one `EXPERIMENT` env var; copy that pattern.
+- **Config alignment across scales**: the 4B/8B servers actually run hand-modified scripts with `train 8 × group 4 = 32 traj/step, val 32` — NOT the repo 4B script's 16×8. All ALFWorld comparison arms (1.7B/4B/8B) must use 8/32/4. Repo `run_alfworld_qwen3_1p7b_2gpu.sh` encodes it; server scripts are hand-edited on the boxes.
+- **Queue-script race**: arming a PS auto-queue while the baseline is still in data-prepare (no `main_ppo` yet) makes the wait-for-exit loop pass instantly → PS arm collides with baseline. Fixed in `queue_alfworld_qwen3_1p7b_ps.sh` (waits for main_ppo to appear first); 4B/8B queue scripts still have the race if armed early.
+- `pgrep`/`pkill -f main_ppo` self-match: use `mai[n]_ppo`. Over SSH, `pkill -f` also matches the SSH session's own remote command line and kills it.
+- Non-interactive SSH to the cloud boxes has no conda env and no HF mirror: prefix `PATH=/root/miniconda3/envs/verl-agent/bin:$PATH`; HF hub retries then falls back to local cache.
+- TextWorld env workers leak ~1MB/step/worker RAM (no plateau); the local box has a persistent 256GB NVMe swapfile absorbing the cold pages. At 64 workers (8/32/4 config) the leak is only ~7GB per 150-step run — negligible. Restart-on-checkpoint playbook (backup plan) in `research_logs/2026-07-14_ps_grpo_s3_baseline.md`.
 - verl's `perf/max_memory_*_gb` metrics are summed across GPUs, not per-card.
+- Val with 32 episodes + sampled decoding (temp 0.4) has ±9% single-point noise: quote late-window means, never the final point. Clean endpoints come from a 140-games `val_only` eval on the saved ckpt.
 
 **Results so far:**
-- Qwen2.5-1.5B GRPO ALFWorld baseline (2×5090, 150 steps): final val **67.2%** (weakness: look_at_obj_in_light 0%).
-- HRG pilot (Qwen3-1.7B, 3 arms serial on 2×5090): **arm A** (pure GRPO) full-budget negative — never left the 7.7% random floor (gradient starvation, grad_norm 0.05); **arm B** (PS, location/visibility Φ) — prediction saturates to 0.99 in ~20 steps but success stays floor: empirical instance of the coverage-dependence counterexample (Φ doesn't cover the rule latent) — first real anchor for the C×gain narrative; **arm C** (task_done upweighted, rule-relevant target) queued. See `research_logs/2026-07-17_hrg_pilot_grpo_vs_ps.md`.
-- Qwen3-4B ALFWorld on the 8×RTX Pro 6000 server: **P0 throughput gate passed 8.5×** (~1280 traj/h, update 31–44s no-offload), baseline running; PS arm auto-queued via `queue_alfworld_qwen3_4b_ps.sh`. See `research_logs/2026-07-17_qwen3_4b_alfworld.md`.
-- Watch item across Qwen3 scales: initial entropy sharpens with size (1.7B 0.19 → 4B 0.141); group-diversity risk for GRPO.
+- Qwen2.5-1.5B GRPO ALFWorld baseline (2×5090, 150 steps, 128 traj/step): final val **67.2%** (weakness: look_at_obj_in_light 0%). Pipeline/learning-curve reference only — not comparable to the Qwen3 arms (4× their data budget).
+- **HRG pilot final (Qwen3-1.7B, 3 arms, 150 steps each)**: all three arms statistically at the 7.7% random floor. **A** (pure GRPO): gradient starvation (grad_norm 0.05). **B** (PS, generic Φ): pred saturates 0.99 in ~20 steps, F1 probe **collapses 0.51→0.24**. **C** (task_done upweighted): pred saturates identically, but F1 probe **holds ~0.49**. Core claim: reward weights control *which* beliefs are maintained, but reallocation within a non-covering Φ family never converts to success — **coverage C is the decisive variable, not feature weights**. Falsifiable predictions registered for arm D (vault_openable upper-bound Φ) and HRG@4B. See `research_logs/2026-07-17_hrg_pilot_grpo_vs_ps.md`.
+- **Qwen3-4B ALFWorld baseline final** (8×RTX Pro 6000, actual config 8/32/4 = 32 traj/step): 150/150 in ~18h, zero crashes; ~315 traj/h (P0 gate passed 2.1×); train success ~24%→~59%; val last-6 mean **≈50%** (peak 65.6% @125). PS arm (`qwen3_4b_ps_grpo`, util 0.85, own ckpt dir) running from scratch. Baseline step-150 ckpt backed up on a third machine (user-managed). See `research_logs/2026-07-17_qwen3_4b_alfworld.md` §5–6.
+- **Qwen3-8B ALFWorld baseline** (8×RTX 6000D, same 8/32/4): running healthy ~590s/step (~24h total); PS queue armed with dedicated ckpt dir.
+- **Qwen3-1.7B ALFWorld pair** (local 2×5090, same 8/32/4): baseline running + PS auto-queue armed — completes the 1.7B→4B→8B scale ladder for the adjudicator table.
+- Entropy across Qwen3 scales: 1.7B 0.19 → 4B 0.141 → **8B ~0.20** — the sharpens-with-scale trend does NOT continue at 8B.
 
 Compute justification memos (8-GPU necessity, measured-data based): `docs/8gpu_compute_justification.md` (CN) / `_en.md` (EN).
 
-Scripts: `run_alfworld_mini.sh` / `run_hiddenrule_mini.sh` (2×5090 smokes), `run_alfworld_full_32gb.sh` (2×5090 full), `run_alfworld_qwen3_4b_8gpu.sh` + `queue_alfworld_qwen3_4b_ps.sh` (8×96GB server).
+Scripts: `run_alfworld_mini.sh` / `run_hiddenrule_mini.sh` (2×5090 smokes), `run_alfworld_full_32gb.sh` (2×5090 full, legacy 128 traj/step), `run_alfworld_qwen3_1p7b_2gpu.sh` + `queue_alfworld_qwen3_1p7b_ps.sh` (2×5090, aligned 8/32/4), `run_alfworld_qwen3_4b_8gpu.sh` + `queue_alfworld_qwen3_4b_ps.sh` (8×96GB server), `run_alfworld_qwen3_8b_8gpu.sh` + `queue_alfworld_qwen3_8b_ps.sh` (8×6000D server; server-side copies are hand-hardened).
 
 ## Configuration
 
