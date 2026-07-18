@@ -18,6 +18,19 @@ set -x
 
 mkdir -p logs
 
+# 防呆: 若在 baseline 的 main_ppo 还没启动时就挂本脚本 (数据准备阶段约 1 分钟),
+# 直接进入"等消失"循环会立即通过 → 180s 后 PS 臂与 baseline 撞车 (2026-07-18 实录)。
+# 先等 main_ppo 出现 (最多 30 分钟), 再等它消失。
+waited=0
+until pgrep -f "python3 -m verl.trainer.mai[n]_ppo" > /dev/null; do
+    sleep 30
+    waited=$((waited + 30))
+    if [ $waited -ge 1800 ]; then
+        echo "WARN: 30min 内未见 main_ppo, 视为 baseline 已结束, 继续接棒"
+        break
+    fi
+done
+
 while pgrep -f "python3 -m verl.trainer.mai[n]_ppo" > /dev/null; do
     sleep 60
 done
