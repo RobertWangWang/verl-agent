@@ -47,7 +47,7 @@ Adding a new environment = env package + prompts file + manager class registered
 
 ## Active research: PS-GRPO (predictive-sufficiency memory rewards)
 
-Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**v0.2**, Chinese; supersedes `proposal_predictive_belief_memory_RL.md`). Central claim (H1) is an "adjudicator comparison": memory-reward signals judged by *environment future observations* (this method) vs downstream-task / anchor-QA / self-report / supervised-aux-loss baselines. Design docs: `docs/ps_grpo_integration_design.md` (reward pipeline, stages S0–S4 with acceptance records) and `docs/hiddenrule_gym_design.md` (synthetic env). Every experiment gets a dated record in `research_logs/` (Chinese) — read the latest ones for current status before planning work.
+Governing proposal: `proposal_predictive_belief_memory_RL_v0.2_consensus.md` (**v0.2**, Chinese; supersedes `proposal_predictive_belief_memory_RL.md`). **Experiment tracker: `experiment_plan.md`** (run IDs R01–R37, status, launch recipes, machine schedule — update it whenever a run starts/finishes). Central claim (H1) is an "adjudicator comparison": memory-reward signals judged by *environment future observations* (this method) vs downstream-task / anchor-QA / self-report / supervised-aux-loss baselines. Design docs: `docs/ps_grpo_integration_design.md` (reward pipeline, stages S0–S4 with acceptance records) and `docs/hiddenrule_gym_design.md` (synthetic env). Every experiment gets a dated record in `research_logs/` (Chinese) — read the latest ones for current status before planning work.
 
 **Implemented and fully wired (S0–S4, unit-tested):**
 
