@@ -104,3 +104,35 @@ class TestRecorder:
         r = self._recorder()
         parsed = {'objects': sorted(truth_objects)}
         assert r.score(0, 1, parsed) == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# R13 自报告臂 (设计 §10): 解析
+# ---------------------------------------------------------------------------
+
+class TestParseReport:
+    def test_integer_percent(self):
+        from agent_system.environments.verifiable_features import parse_report_block
+        assert parse_report_block("<report>confidence: 85</report>") == pytest.approx(0.85)
+        assert parse_report_block("<report>confidence: 85%</report>") == pytest.approx(0.85)
+
+    def test_fraction_form(self):
+        from agent_system.environments.verifiable_features import parse_report_block
+        assert parse_report_block("<report>confidence: 0.4</report>") == pytest.approx(0.4)
+
+    def test_clamped(self):
+        from agent_system.environments.verifiable_features import parse_report_block
+        assert parse_report_block("<report>confidence: 250</report>") == 1.0
+
+    def test_missing(self):
+        from agent_system.environments.verifiable_features import parse_report_block
+        assert parse_report_block("<action>go</action>") is None
+        assert parse_report_block("<report>very sure</report>") is None
+        assert parse_report_block("") is None
+
+    def test_manager_imports_resolve(self):
+        """回归: manager 引用的三个解析器都必须真的被 import (efc33ef 的潜伏 NameError)"""
+        import agent_system.environments.env_manager as m
+        assert callable(m.parse_recall_block)
+        assert callable(m.parse_report_block)
+        assert callable(m.parse_predict_block)

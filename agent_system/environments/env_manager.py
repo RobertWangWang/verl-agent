@@ -27,6 +27,8 @@ from agent_system.environments.verifiable_features import (
     create_alfworld_schema_extractor,
     gold_predict_string,
     parse_predict_block,
+    parse_recall_block,
+    parse_report_block,
     prediction_to_features,
     task_target_objects,
 )
@@ -163,11 +165,15 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             )
         else:
             self.memory = SimpleMemory()
+        # 自报告对照臂 (设计 §10): 无外部验证的信心自评, 经 pred_reward 通道
+        sr_cfg = alfworld_cfg.get('self_report', None) if alfworld_cfg is not None else None
+        self.sr_enabled = bool(sr_cfg is not None and sr_cfg.get('enable', False))
         # 锚点 QA 对照臂 (设计 §9): 回忆监督,与 prediction 互斥 (一个 prompt 一个辅助块)
         aqa_cfg = alfworld_cfg.get('anchor_qa', None) if alfworld_cfg is not None else None
         self.aqa_enabled = bool(aqa_cfg is not None and aqa_cfg.get('enable', False))
+        assert sum([self.pred_enabled, self.aqa_enabled, self.sr_enabled]) <= 1, \
+            "prediction / anchor_qa / self_report 互斥 (一个 prompt 只有一个辅助块)"
         if self.aqa_enabled:
-            assert not self.pred_enabled, "anchor_qa 与 prediction 互斥"
             from agent_system.memory.anchor_qa import AnchorQARecorder
             self.aqa_recorder = AnchorQARecorder(
                 create_alfworld_schema_extractor(),
@@ -219,6 +225,8 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
             # 锚点 QA: 回忆答案对应本步 prompt (步号 T = 已存历史 + 1),入队前先定格
             aqa_cur_steps = [len(self.memory[i]) + 1 for i in range(len(text_actions))]
             parsed_recalls = [parse_recall_block(t) for t in text_actions]
+        if self.sr_enabled:
+            parsed_reports = [parse_report_block(t) for t in text_actions]
 
         actions, valids = self.projection_f(text_actions, self.envs.get_admissible_commands)
         text_obs, image_obs, rewards, dones, infos = self.envs.step(actions)
@@ -232,6 +240,16 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.sr_enabled:
+            # 自报告: 奖励 = 自报信心本身 (无外部验证, 设计 §10);
+            # pred_* 指标在本臂语义 = 平均自报信心
+            for i in range(len(text_obs)):
+                conf = parsed_reports[i]
+                score = float(conf) if conf is not None else 0.0
+                infos[i]['pred_parse_valid'] = conf is not None
+                infos[i]['pred_accuracy'] = score
+                infos[i]['pred_reward'] = score
 
         if self.aqa_enabled:
             # 评分对锚点存档即时闭环 (不依赖下一观测);奖励复用 pred_reward 注入通道,
@@ -322,7 +340,12 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                     action_key="action")
             
         # PS 变体模板要求额外的 <predict> 块 (docs/ps_grpo_integration_design.md §2A/§7.2)
-        if not self.pred_enabled:
+        if getattr(self, 'sr_enabled', False):
+            from agent_system.environments.prompts.alfworld import (
+                ALFWORLD_TEMPLATE_NO_HIS_SR, ALFWORLD_TEMPLATE_SR,
+            )
+            template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS_SR, ALFWORLD_TEMPLATE_SR
+        elif not self.pred_enabled:
             template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS, ALFWORLD_TEMPLATE
         elif self.feature_protocol == 'schema':
             template_no_his, template = ALFWORLD_TEMPLATE_NO_HIS_PS_SCHEMA, ALFWORLD_TEMPLATE_PS_SCHEMA

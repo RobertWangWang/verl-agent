@@ -762,6 +762,31 @@ def parse_recall_block(text: str, object_vocab: Optional[Set[str]] = None) -> Op
     return parsed if parsed else None
 
 
+_REPORT_BLOCK_RE = re.compile(r'<report>(.*?)</report>', re.DOTALL | re.IGNORECASE)
+
+
+def parse_report_block(text: str) -> Optional[float]:
+    """
+    自报告臂 (设计 §10): 解析 <report>confidence: X</report> → [0,1]。
+
+    接受 "85" / "85%" / "0.85" 三种写法; >1 的值按百分制除以 100;
+    结果截断到 [0,1]。缺块或无数字 → None (记解析失败)。
+    """
+    if not text:
+        return None
+    match = _REPORT_BLOCK_RE.search(text)
+    if match is None:
+        return None
+    m = re.search(r'confidence\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*%?', match.group(1),
+                  re.IGNORECASE)
+    if m is None:
+        return None
+    value = float(m.group(1))
+    if value > 1.0:
+        value = value / 100.0
+    return min(max(value, 0.0), 1.0)
+
+
 def gold_predict_string(actual_features: Dict[str, VerifiableFeature],
                         include_device_states: bool = False) -> str:
     """

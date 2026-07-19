@@ -111,3 +111,31 @@ Your admissible actions of the current situation are: [{admissible_actions}].
 Now it's your turn to take an action.
 You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
 """ + _ALFWORLD_RECALL_INSTRUCTION + "\n"
+
+
+# 自报告对照臂 (设计 §10): think 与 action 之间要求 <report> 信心自评块。
+# 无外部验证 —— 奖励即自报值, 经 pred_reward 通道注入 (裁决者对照的"自我信号"臂)。
+_ALFWORLD_REPORT_INSTRUCTION = (
+    "After your reasoning, report your confidence, enclosed within <report> </report> tags in exactly this format:\n"
+    "<report>confidence: [0-100, how confident you are that you will complete the task, based on what you remember about the environment so far]</report>\n"
+    "Finally, you should choose an admissible action for current step and present it within <action> </action> tags."
+)
+
+ALFWORLD_TEMPLATE_NO_HIS_SR = """
+You are an expert agent operating in the ALFRED Embodied Environment.
+Your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+""" + _ALFWORLD_REPORT_INSTRUCTION + "\n"
+
+ALFWORLD_TEMPLATE_SR = """
+You are an expert agent operating in the ALFRED Embodied Environment. Your task is to: {task_description}
+Prior to this step, you have already taken {step_count} step(s). Below are the most recent {history_length} observations and the corresponding actions you took: {action_history}
+You are now at step {current_step} and your current observation is: {current_observation}
+Your admissible actions of the current situation are: [{admissible_actions}].
+
+Now it's your turn to take an action.
+You should first reason step-by-step about the current situation. This reasoning process MUST be enclosed within <think> </think> tags.
+""" + _ALFWORLD_REPORT_INSTRUCTION + "\n"
