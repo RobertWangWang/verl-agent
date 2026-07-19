@@ -142,3 +142,69 @@ class TestPredLambdaSchedule:
     def test_missing_anneal_block_is_constant(self):
         cfg = OmegaConf.create({'enable': True, 'lambda': 0.3})
         assert pred_lambda_schedule(cfg, 50, 100) == pytest.approx(0.3)
+
+
+# ---------------------------------------------------------------------------
+# R38: GDPO 式分通道解耦优势 (apply_decoupled_pred_advantage)
+# ---------------------------------------------------------------------------
+
+class TestDecoupledPredAdvantage:
+    def _batch(self, uids, pred_rewards, resp_len=4, prompt_len=2):
+        import numpy as np
+        import torch
+        from tensordict import TensorDict
+        from verl import DataProto
+        n = len(uids)
+        attn = torch.ones(n, prompt_len + resp_len, dtype=torch.long)
+        attn[:, -1] = 0  # 最后一个 response 位为 padding, 验证 mask 尊重
+        td = TensorDict({
+            'responses': torch.zeros(n, resp_len, dtype=torch.long),
+            'attention_mask': attn,
+            'advantages': torch.zeros(n, resp_len),
+        }, batch_size=[n])
+        return DataProto(batch=td, non_tensor_batch={
+            'uid': np.array(uids, dtype=object),
+            'pred_rewards': np.array(pred_rewards, dtype=np.float32),
+        })
+
+    def test_group_centering_and_lambda_cap(self):
+        import torch
+        from verl.trainer.ppo.ray_trainer import apply_decoupled_pred_advantage
+        data = self._batch(['a', 'a', 'b', 'b'], [0.1, 0.0, 0.5, 0.5])
+        data, m = apply_decoupled_pred_advantage(data, lambda_pred=0.1, norm_by_std=True)
+        adv = data.batch['advantages']
+        # 组 a: 差异被组内归一化到 ±1, 再乘 λ → ±0.1 (封顶在 λ·O(1))
+        assert adv[0, 0] == pytest.approx(0.1, abs=1e-4)
+        assert adv[1, 0] == pytest.approx(-0.1, abs=1e-4)
+        # 组 b: 组内无差异 → 贡献 0 (跨组的 0.5 vs 0.05 不泄漏)
+        assert float(adv[2].abs().sum()) == pytest.approx(0.0, abs=1e-6)
+        # padding 位不携带优势
+        assert float(adv[0, -1]) == 0.0
+        assert m['episode/pred_adv_contrib/max_abs'] <= 0.1 + 1e-4
+
+    def test_mean_only_mode(self):
+        from verl.trainer.ppo.ray_trainer import apply_decoupled_pred_advantage
+        data = self._batch(['a', 'a'], [0.3, 0.1])
+        data, _ = apply_decoupled_pred_advantage(data, lambda_pred=1.0, norm_by_std=False)
+        adv = data.batch['advantages']
+        assert adv[0, 0] == pytest.approx(0.1)   # 0.3 - 0.2
+        assert adv[1, 0] == pytest.approx(-0.1)
+
+    def test_additive_on_existing_task_advantage(self):
+        import torch
+        from verl.trainer.ppo.ray_trainer import apply_decoupled_pred_advantage
+        data = self._batch(['a', 'a'], [1.0, 0.0])
+        data.batch['advantages'][:] = 2.0  # 既有任务优势
+        data, _ = apply_decoupled_pred_advantage(data, lambda_pred=0.1, norm_by_std=True)
+        adv = data.batch['advantages']
+        assert adv[0, 0] == pytest.approx(2.1, abs=1e-4)
+        assert adv[1, 0] == pytest.approx(1.9, abs=1e-4)
+        # padding 位维持原任务优势不被 pred 贡献污染
+        assert adv[0, -1] == pytest.approx(2.0)
+
+    def test_amplification_capped_vs_legacy(self):
+        """核心主张: 全败组内微小 pred 差异的优势贡献 ≤ λ, 而非满幅"""
+        from verl.trainer.ppo.ray_trainer import apply_decoupled_pred_advantage
+        data = self._batch(['g'] * 4, [0.002, 0.001, 0.0015, 0.0005])
+        data, m = apply_decoupled_pred_advantage(data, lambda_pred=0.1, norm_by_std=True)
+        assert m['episode/pred_adv_contrib/max_abs'] <= 0.1 * 1.5 + 1e-4  # std 归一后 |z|≲1.5

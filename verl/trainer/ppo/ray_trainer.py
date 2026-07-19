@@ -284,6 +284,56 @@ def apply_prediction_reward(data: DataProto, lambda_pred: float):
     return data, metrics
 
 
+def apply_decoupled_pred_advantage(data: DataProto, lambda_pred: float,
+                                   norm_by_std: bool = True, eps: float = 1e-6):
+    """
+    R38 (GDPO 式分通道解耦优势, 设计依据 arXiv:2601.05242 + findings_synthesis 附录):
+
+    可预测性劫持的引擎 = 任务/预测奖励混合后做组归一化 —— 全败组内微小的
+    λ·r_pred 差异被 std 归一化放大成满幅优势。解法: pred 通道**独立**按 uid 组
+    归一化, 再以 λ 加权叠加到任务优势上:
+
+        adv = adv_task + λ · normalize_group(r_pred)
+
+    pred 通道对优势的贡献被结构性封顶在 λ·O(1) —— 放大引擎失去弹药,
+    稠密信号保留。前置条件: 任务奖励侧未注入 r_pred (fit loop 在
+    decoupled_advantage=True 时跳过 apply_prediction_reward), adv_task 已由
+    compute_advantage 算好。pred 优势按 GRPO 结果式处理: 均匀广播到该
+    step-sample 的全部有效 response token。仅支持 grpo 估计器 (gigpo 的
+    step_rewards 通道暂不接, 由调用方把关)。
+    """
+    uids = data.non_tensor_batch['uid']
+    pred_rewards = torch.as_tensor(
+        data.non_tensor_batch['pred_rewards'].astype(np.float32))
+    advantages = data.batch['advantages']
+    response_length = data.batch['responses'].size(1)
+    response_mask = data.batch['attention_mask'][:, -response_length:]
+
+    pred_adv = torch.zeros_like(pred_rewards)
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for i, uid in enumerate(uids):
+        groups[uid].append(i)
+    for idxs in groups.values():
+        idx = torch.as_tensor(idxs, dtype=torch.long)
+        r = pred_rewards[idx]
+        centered = r - r.mean()
+        if norm_by_std:
+            centered = centered / (r.std(unbiased=False) + eps)
+        pred_adv[idx] = centered
+
+    contribution = lambda_pred * pred_adv  # (B,)
+    data.batch['advantages'] = advantages + contribution.unsqueeze(-1).to(advantages.dtype) \
+        * response_mask.to(advantages.dtype)
+
+    metrics = {
+        'episode/pred_lambda': lambda_pred,
+        'episode/pred_adv_contrib/mean_abs': float(contribution.abs().mean()),
+        'episode/pred_adv_contrib/max_abs': float(contribution.abs().max()),
+    }
+    return data, metrics
+
+
 def compute_response_mask(data: DataProto):
     """Compute the attention mask for the response part of the sequence.
 
@@ -1268,10 +1318,14 @@ class RayPPOTrainer:
                                                                                   )
                             metrics.update(invalid_metrics)
 
-                        # PS-GRPO: inject prediction-sufficiency shaping reward per step
+                        # PS-GRPO: inject prediction-sufficiency shaping reward per step.
+                        # R38 (decoupled_advantage=True): 不注入奖励通道 —— pred 在
+                        # compute_advantage 之后走独立组归一化的优势通道 (见下)。
                         pred_reward_cfg = self.config.algorithm.get('pred_reward', None)
-                        if pred_reward_cfg is not None and pred_reward_cfg.get('enable', False) \
-                                and 'pred_rewards' in batch.non_tensor_batch:
+                        pred_enabled = pred_reward_cfg is not None and pred_reward_cfg.get('enable', False) \
+                            and 'pred_rewards' in batch.non_tensor_batch
+                        pred_decoupled = bool(pred_enabled and pred_reward_cfg.get('decoupled_advantage', False))
+                        if pred_enabled and not pred_decoupled:
                             pred_lambda = pred_lambda_schedule(pred_reward_cfg, self.global_steps, self.total_training_steps)
                             batch, pred_metrics = apply_prediction_reward(batch, lambda_pred=pred_lambda)
                             metrics.update(pred_metrics)
@@ -1303,6 +1357,17 @@ class RayPPOTrainer:
                             gigpo_enable_similarity= self.config.algorithm.gigpo.enable_similarity,
                             gigpo_similarity_thresh=self.config.algorithm.gigpo.similarity_thresh,
                         )
+
+                        # R38: pred 通道独立组归一化后按 λ 叠加进优势 (GDPO 式解耦)
+                        if pred_decoupled:
+                            assert self.config.algorithm.adv_estimator == AdvantageEstimator.GRPO, \
+                                "decoupled_advantage 目前仅支持 grpo 估计器"
+                            pred_lambda = pred_lambda_schedule(pred_reward_cfg, self.global_steps, self.total_training_steps)
+                            batch, pred_metrics = apply_decoupled_pred_advantage(
+                                batch, lambda_pred=pred_lambda,
+                                norm_by_std=norm_adv_by_std_in_grpo,
+                            )
+                            metrics.update(pred_metrics)
 
                     # update critic
                     if self.use_critic:

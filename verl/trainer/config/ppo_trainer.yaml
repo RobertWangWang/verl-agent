@@ -255,6 +255,7 @@ algorithm:
   pred_reward: # PS-GRPO 预测充分性奖励注入 (docs/ps_grpo_integration_design.md §2D)
     enable: False # 需同时开启 env.<env>.prediction.enable 采集才生效
     lambda: 0.1 # 注入系数 λ; 总奖励 = 任务奖励 + λ·r_pred (r_pred 逐 step 注入)
+    decoupled_advantage: False # R38 (GDPO 式): pred 通道独立组归一化后按 λ 叠加进优势, 不进奖励通道 —— 封顶劫持放大 (arXiv:2601.05242); 仅支持 grpo
     anneal: # λ 退火，后期回归任务奖励主导 (研究计划 §4.3)
       style: constant # constant / linear / cosine
       final_ratio: 0.0 # 末期 λ = lambda * final_ratio
