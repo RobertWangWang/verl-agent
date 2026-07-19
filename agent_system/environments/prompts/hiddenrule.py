@@ -82,3 +82,18 @@ HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV = HIDDENRULE_TEMPLATE_NO_HIS_PS.replace(
     _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_DEV)
 HIDDENRULE_TEMPLATE_PS_DEV = HIDDENRULE_TEMPLATE_PS.replace(
     _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_DEV)
+
+# 臂 D 变体 (latent 标注上界, 提案 §5.5): predict 块加 vault_openable 字段。
+# 该目标在观测文本中不可见 —— 正确预测要求维护隐藏规则的 belief。
+# 门控: env.hiddenrule.prediction.predict_vault_openable=True。
+_HIDDENRULE_PREDICT_INSTRUCTION_VAULT = _HIDDENRULE_PREDICT_INSTRUCTION.replace(
+    "task_done:",
+    "vault_openable: [yes/no - after this action, would 'open vault' succeed if tried? "
+    "This depends on the hidden mechanism you are trying to discover]; "
+    "task_done:",
+)
+
+HIDDENRULE_TEMPLATE_NO_HIS_PS_VAULT = HIDDENRULE_TEMPLATE_NO_HIS_PS.replace(
+    _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_VAULT)
+HIDDENRULE_TEMPLATE_PS_VAULT = HIDDENRULE_TEMPLATE_PS.replace(
+    _HIDDENRULE_PREDICT_INSTRUCTION, _HIDDENRULE_PREDICT_INSTRUCTION_VAULT)

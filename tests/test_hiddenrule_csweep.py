@@ -204,3 +204,62 @@ class TestSweepWiring:
         _, i2 = env2.reset(seed=23)
         assert i1['phi_mask'] == i2['phi_mask']
         assert i1['phi_coverage'] == i2['phi_coverage']
+
+
+# ---------------------------------------------------------------------------
+# 臂 D: vault_openable 上界 Φ (特权 latent 验证)
+# ---------------------------------------------------------------------------
+
+class TestVaultOpenableFeature:
+    def test_extract_from_privileged_latent(self):
+        from agent_system.environments.env_package.hiddenrule.features import HRGVaultOpenableFeature
+        f = HRGVaultOpenableFeature()
+        feat = f.extract("You are in room 1.", [], {'latent_state': {'vault_openable': True}})
+        assert feat.value == {'openable': True}
+        feat2 = f.extract("You are in room 1.", [], {'latent_state': {'vault_openable': False}})
+        assert feat2.value == {'openable': False}
+        # 缺 latent 时安全回落 False
+        assert f.extract("x", [], {}).value == {'openable': False}
+
+    def test_parse_and_roundtrip(self):
+        from agent_system.environments.env_package.hiddenrule.features import (
+            HRG_OBJECT_VOCAB, create_hiddenrule_schema_extractor)
+        from agent_system.environments.verifiable_features import (
+            parse_predict_block, prediction_to_features)
+        parsed = parse_predict_block(
+            "<predict>next_location: room 2; vault_openable: yes; task_done: no</predict>",
+            object_vocab=HRG_OBJECT_VOCAB)
+        assert parsed['vault_openable'] is True
+        feats = prediction_to_features(parsed)
+        assert feats['vault_openable'].value == {'openable': True}
+        # 臂 D 权重下满分闭环: 预测与特权 latent 一致 → 1.0
+        ex = create_hiddenrule_schema_extractor(feature_weights={
+            'location_change': 0.3, 'vault_openable': 0.7,
+            'objects_visible': 0.0, 'visible_objects': 0.0,
+            'device_state': 0.0, 'task_progress': 0.0})
+        actual = ex.extract_all("You are in room 2.", [],
+                                {'latent_state': {'vault_openable': True}, 'won': False})
+        assert ex.compute_reward(feats, actual) == pytest.approx(1.0)
+        # 预测错 → 只得 location 份额 0.3
+        parsed_no = parse_predict_block(
+            "<predict>next_location: room 2; vault_openable: no</predict>",
+            object_vocab=HRG_OBJECT_VOCAB)
+        assert ex.compute_reward(prediction_to_features(parsed_no), actual) == pytest.approx(0.3)
+
+    def test_env_end_to_end_latent_matches_open_vault(self):
+        """特权 latent 与环境真实可开性一致 (oracle 终点即 vault_openable 为真的状态)"""
+        from agent_system.environments.env_package.hiddenrule.hiddenrule.env import HiddenRuleEnv
+        from agent_system.environments.env_package.hiddenrule.hiddenrule.oracle import solve
+        from agent_system.environments.env_package.hiddenrule.hiddenrule.world import HRGConfig, generate_world
+        cfg = HRGConfig(rule_families=['conj'], n_rooms=4, n_devices=4)
+        env = HiddenRuleEnv(cfg)
+        obs, info = env.reset(seed=5)
+        assert info['latent_state']['vault_openable'] in (True, False)
+        solution = solve(env.world)
+        assert solution is not None
+        done = False
+        for action in solution:
+            if action == 'open vault':
+                assert env._info(True)['latent_state']['vault_openable'] is True
+            obs, r, done, info = env.step(action)
+        assert info['won'] is True

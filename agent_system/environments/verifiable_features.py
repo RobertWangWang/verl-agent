@@ -660,6 +660,12 @@ def parse_predict_block(text: str, object_vocab: Optional[Set[str]] = None) -> O
                 parsed['task_done'] = True
             elif value in _NO_VALUES:
                 parsed['task_done'] = False
+        elif key == 'vault_openable':
+            # 臂 D (HRG 上界 Φ): "这步后 vault 是否可开" yes/no
+            if value in _YES_VALUES:
+                parsed['vault_openable'] = True
+            elif value in _NO_VALUES:
+                parsed['vault_openable'] = False
         elif key == 'device_states':
             # C-sweep (HRG): "lever_a=up, dial_b=2" / "none"。
             # 状态归一到观测渲染词形: 纯数字 d → "set to d" (dial 渲染格式)
@@ -709,6 +715,10 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
     if 'device_states' in parsed:
         features['device_state'] = VerifiableFeature(
             feature_type='device_state', value={'pairs': parsed['device_states']}
+        )
+    if 'vault_openable' in parsed:
+        features['vault_openable'] = VerifiableFeature(
+            feature_type='vault_openable', value={'openable': parsed['vault_openable']}
         )
     return features
 

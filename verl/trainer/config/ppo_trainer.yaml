@@ -347,6 +347,7 @@ env:
       horizon: 1
       feature_weights: null # null = features.py 默认 (location 0.5 / objects_visible 0.5)
       predict_device_states: False # C-sweep: predict 块加 device_states 字段 (配 feature_weights 里 device_state>0; C-sweep 臂需把 objects_visible 权重设 0)
+      predict_vault_openable: False # 臂 D (上界 Φ): predict 块加 vault_openable 字段 (特权 latent 验证; 配 feature_weights vault_openable>0; 与 predict_device_states 互斥)
       collect_gold: False # S6: 同 env.alfworld.prediction.collect_gold
   sokoban:
     dim_room: [6, 6]

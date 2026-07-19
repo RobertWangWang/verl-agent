@@ -767,6 +767,10 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 if pred_cfg.get('feature_weights', None) is not None else None
             # C-sweep: predict 块是否含 device_states 字段 (模板 _DEV 变体)
             self.predict_device_states = bool(pred_cfg.get('predict_device_states', False))
+            # 臂 D: predict 块是否含 vault_openable 字段 (上界 Φ, 模板 _VAULT 变体)
+            self.predict_vault_openable = bool(pred_cfg.get('predict_vault_openable', False))
+            assert not (self.predict_device_states and self.predict_vault_openable), \
+                "predict_device_states 与 predict_vault_openable 属不同臂, 不可同开"
             # S6: 采集事后正确预测串 (监督辅助损失臂的教师信号, §8.1)
             self.collect_gold = bool(pred_cfg.get('collect_gold', False))
             # HRG 只有 schema 协议 (环境本身无任务变体); lambda_pred=1.0 同 AlfWorld:
@@ -861,6 +865,11 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV, HIDDENRULE_TEMPLATE_PS_DEV,
             )
             template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS_DEV, HIDDENRULE_TEMPLATE_PS_DEV
+        elif getattr(self, 'predict_vault_openable', False):
+            from agent_system.environments.prompts.hiddenrule import (
+                HIDDENRULE_TEMPLATE_NO_HIS_PS_VAULT, HIDDENRULE_TEMPLATE_PS_VAULT,
+            )
+            template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS_VAULT, HIDDENRULE_TEMPLATE_PS_VAULT
         else:
             template_no_his, template = HIDDENRULE_TEMPLATE_NO_HIS_PS, HIDDENRULE_TEMPLATE_PS
 

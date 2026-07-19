@@ -155,6 +155,25 @@ class HRGDeviceStateFeature(BaseFeatureExtractor):
         return 2 * precision * recall / (precision + recall)
 
 
+class HRGVaultOpenableFeature(BaseFeatureExtractor):
+    """臂 D (latent 标注上界, 提案 §5.5): "这步之后 vault 是否已可打开?"
+    验证走特权 latent (info['latent_state']['vault_openable']) —— 观测文本中
+    不可见, 正确预测要求维护规则 belief。这是覆盖度 C→1 的上界 Φ:
+    预注册预测 = 预测*难*学 (不能靠可见特征刷满), 学动则成功率分化。"""
+
+    feature_type = 'vault_openable'
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        latent = info.get('latent_state', {}) or {}
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'openable': bool(latent.get('vault_openable', False))})
+
+    def verify(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> bool:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        return predicted.value.get('openable', False) == actual.value.get('openable', False)
+
+
 class HRGTaskProgressFeature(BaseFeatureExtractor):
     """vault 是否已开 (info['won']);对应 predict 块 task_done,权重 0 仅日志"""
 
@@ -233,6 +252,7 @@ def create_hiddenrule_schema_extractor(feature_weights: Dict[str, float] = None)
             'visible_objects': 0.0,  # F1 探针仅日志
             'device_state': 0.0,     # 不被预测,进特征池
             'task_progress': 0.0,    # 平凡预测仅日志
+            'vault_openable': 0.0,   # 臂 D 上界 Φ (特权 latent), 默认关
         }
     extractors = [
         (HRGLocationFeature(), feature_weights.get('location_change', 0.5)),
@@ -240,5 +260,6 @@ def create_hiddenrule_schema_extractor(feature_weights: Dict[str, float] = None)
         (HRGVisibleObjectsF1Feature(), feature_weights.get('visible_objects', 0.0)),
         (HRGDeviceStateFeature(), feature_weights.get('device_state', 0.0)),
         (HRGTaskProgressFeature(), feature_weights.get('task_progress', 0.0)),
+        (HRGVaultOpenableFeature(), feature_weights.get('vault_openable', 0.0)),
     ]
     return CompositeFeatureExtractor(extractors)
