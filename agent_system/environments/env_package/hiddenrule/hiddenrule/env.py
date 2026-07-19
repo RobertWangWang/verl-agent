@@ -201,6 +201,8 @@ class HiddenRuleEnv:
         self._noise_rng: Optional[random.Random] = None
         self._phi_mask: Optional[Tuple[str, ...]] = None
         self._phi_coverage: Optional[float] = None
+        self._evidence_revealed_at: Optional[int] = None
+        self._decisive_mistake_at: Optional[int] = None
 
     def reset(self, seed: int) -> Tuple[str, Dict]:
         from .oracle import solve  # 延迟导入避免环
@@ -209,6 +211,9 @@ class HiddenRuleEnv:
         self.steps = 0
         # 观测噪声专用 rng: 与布局 rng 独立,同 seed 同动作序列 → 观测逐字节可复现
         self._noise_rng = random.Random(seed ^ 0x5EED11)
+        # HRG-e 因果标注 (设计 §3): 证据揭示回合 / 决定性失误回合
+        self._evidence_revealed_at = None
+        self._decisive_mistake_at = None
         solution = solve(self.world)
         self._oracle_steps = len(solution) if solution is not None else -1
         # C-sweep (主图 1): coverage_level < 1.0 时把预测目标 Φ 裁剪到贪心校准的
@@ -240,8 +245,23 @@ class HiddenRuleEnv:
 
     def step(self, action: str) -> Tuple[str, float, bool, Dict]:
         assert self.world is not None, "call reset() first"
+        pre_openable = vault_openable(self.world, self.state)
         self.state, feedback, valid = transition(self.world, self.state, action)
         self.steps += 1
+        # HRG-e 因果标注:
+        # evidence_revealed_at = 首次读到真证据便签 (Note.is_true) 的回合;
+        # decisive_mistake_at = 证据已揭示后, 首次把已满足的规则条件亲手破坏
+        #   (vault_openable True→False 由本动作造成) 的回合。v1 限定: 只标注
+        #   "破坏已满足条件" 型失误, 不标注 "持有证据却不行动" (字段审计注记)。
+        if valid and action.startswith("read ") and self._evidence_revealed_at is None:
+            note_name = action[len("read "):]
+            note = next((n for n in self.world.notes if n.name == note_name), None)
+            if note is not None and note.is_true:
+                self._evidence_revealed_at = self.steps
+        if valid and self._evidence_revealed_at is not None \
+                and self._decisive_mistake_at is None \
+                and pre_openable and not vault_openable(self.world, self.state):
+            self._decisive_mistake_at = self.steps
         won = self.state.vault_open
         done = won or self.steps >= self.config.max_steps
         reward = VAULT_REWARD if won else 0.0
@@ -262,6 +282,11 @@ class HiddenRuleEnv:
             # C-sweep: coverage_level<1 时为 (字段 mask, 实测 C); 否则 (None, None)
             "phi_mask": list(self._phi_mask) if self._phi_mask is not None else None,
             "phi_coverage": self._phi_coverage,
+            # HRG-e: 归因偏差分析用 ("预测得分骤降点 vs 真实因果点", 设计 §3)
+            "causal_turns": {
+                "evidence_revealed_at": self._evidence_revealed_at,
+                "decisive_mistake_at": self._decisive_mistake_at,
+            },
             "rule_family": world.rule.family,
             "rule_text": world.rule.describe(world.state_word),
             # 特权信息 (只进 info,绝不进观测): belief 探针 / MI / 归因用
