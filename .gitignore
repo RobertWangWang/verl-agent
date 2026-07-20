@@ -133,3 +133,12 @@ data/
 *ports
 
 session.txt
+
+# private research documents (local only, never commit)
+research_logs/
+experiment_plan.md
+proposal_*.md
+docs/hiddenrule_gym_design.md
+docs/ps_grpo_integration_design.md
+docs/8gpu_compute_justification*.md
+docs/grpo_baseline_guide.md
