@@ -1417,12 +1417,35 @@ class RayPPOTrainer:
                                     )
                                     aux_batch.meta_info["multi_turn"] = \
                                         self.config.actor_rollout_ref.rollout.multi_turn.enable
+                                    # S6 干扰探针: aux 更新前后任务批的策略位移
+                                    # (行为学干扰观测; 失败不阻塞训练)
+                                    probe_on = bool(aux_cfg.get("interference_probe", True))
+                                    pre_logp = None
+                                    if probe_on:
+                                        try:
+                                            pre_out = self.actor_rollout_wg.compute_log_prob(batch)
+                                            pre_logp = pre_out.batch["old_log_probs"]
+                                        except Exception as probe_err:  # noqa: BLE001
+                                            print(f"[aux-probe] pre logp failed: {probe_err}")
+                                            probe_on = False
                                     aux_output = self.actor_rollout_wg.update_actor(aux_batch)
                                     metrics.update({
                                         f"aux_sft/{k}": v for k, v in
                                         reduce_metrics(aux_output.meta_info["metrics"]).items()
                                     })
                                     metrics["aux_sft/num_rows"] = n_aux
+                                    if probe_on and pre_logp is not None:
+                                        try:
+                                            from agent_system.multi_turn_rollout.aux_sft import (
+                                                compute_interference_metrics,
+                                            )
+                                            post_out = self.actor_rollout_wg.compute_log_prob(batch)
+                                            _rlen = batch.batch["responses"].shape[-1]
+                                            _rmask = batch.batch["attention_mask"][:, -_rlen:]
+                                            metrics.update(compute_interference_metrics(
+                                                pre_logp, post_out.batch["old_log_probs"], _rmask))
+                                        except Exception as probe_err:  # noqa: BLE001
+                                            print(f"[aux-probe] post logp failed: {probe_err}")
 
                     # Log rollout generations if enabled
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)

@@ -146,3 +146,31 @@ class TestApplySupervision:
         assert torch.equal(aux.batch['ref_log_prob'], aux.batch['old_log_probs'])
         # gold 段外优势为 0
         assert float(aux.batch['advantages'][0][~mask[0].bool()].abs().sum()) == 0.0
+
+
+class TestInterferenceMetrics:
+    def test_aligned_shift_positive(self):
+        import torch
+        from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
+        pre = torch.zeros(2, 4)
+        post = torch.full((2, 4), 0.5)
+        mask = torch.ones(2, 4)
+        m = compute_interference_metrics(pre, post, mask)
+        assert abs(m['aux_sft/task_shift_mean'] - 0.5) < 1e-6
+        assert abs(m['aux_sft/task_shift_meanabs'] - 0.5) < 1e-6
+
+    def test_conflict_shift_negative_and_masked(self):
+        import torch
+        from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
+        pre = torch.zeros(1, 4)
+        post = torch.tensor([[-1.0, -1.0, 99.0, 99.0]])
+        mask = torch.tensor([[1.0, 1.0, 0.0, 0.0]])  # 后两 token 被掩掉
+        m = compute_interference_metrics(pre, post, mask)
+        assert abs(m['aux_sft/task_shift_mean'] - (-1.0)) < 1e-6
+        assert abs(m['aux_sft/task_shift_meanabs'] - 1.0) < 1e-6
+
+    def test_empty_mask_no_nan(self):
+        import torch
+        from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
+        m = compute_interference_metrics(torch.zeros(1, 3), torch.ones(1, 3), torch.zeros(1, 3))
+        assert m['aux_sft/task_shift_mean'] == 0.0

@@ -122,6 +122,24 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
     return aux
 
 
+def compute_interference_metrics(logp_pre: torch.Tensor, logp_post: torch.Tensor,
+                                 response_mask: torch.Tensor) -> dict:
+    """
+    S6 干扰探针: aux 更新对任务批策略行为的位移 (损失通道的干扰观测,
+    对应负迁移文献的梯度冲突信号; 参数空间梯度余弦需 FSDP 侵入, 此为行为学等价物)。
+    - task_shift_mean > 0: aux 更新提高任务行为似然 (梯度对齐);
+      < 0: 降低 (冲突 —— 干扰的直接证据);
+    - task_shift_meanabs: 位移幅度 (aux 对策略的总扰动量)。
+    """
+    mask = response_mask.float()
+    delta = (logp_post - logp_pre) * mask
+    n = mask.sum().clamp(min=1.0)
+    return {
+        'aux_sft/task_shift_mean': (delta.sum() / n).item(),
+        'aux_sft/task_shift_meanabs': (delta.abs().sum() / n).item(),
+    }
+
+
 def apply_aux_sft_supervision(aux: DataProto, beta: float, use_kl_loss: bool) -> DataProto:
     """
     compute_log_prob(aux) 之后调用: 把监督信号写成 PPO 语义。
