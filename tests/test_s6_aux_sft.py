@@ -174,3 +174,41 @@ class TestInterferenceMetrics:
         from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
         m = compute_interference_metrics(torch.zeros(1, 3), torch.ones(1, 3), torch.zeros(1, 3))
         assert m['aux_sft/task_shift_mean'] == 0.0
+
+
+class TestPlaceboShuffle:
+    def _setup(self):
+        golds = [f"g{i}" for i in range(6)]
+        resp_texts = [f"a<predict>x</predict>b{i}" for i in range(6)]
+        batch, tok = _make_batch(resp_texts, golds)
+        return tok, batch
+
+    def test_shuffle_changes_gold_assignment(self):
+        tok, batch = self._setup()
+        normal = build_aux_sft_batch(batch, tok, placebo_shuffle=False)
+        placebo = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
+        texts_n = [tok.decode(normal.batch['responses'][r]) for r in range(len(normal))]
+        texts_p = [tok.decode(placebo.batch['responses'][r]) for r in range(len(placebo))]
+        # 至少一半行的 gold 被换走 (6 行随机置换恒等概率 1/720)
+        diff = sum(1 for a, b in zip(texts_n, texts_p) if a != b)
+        assert diff >= 3
+
+    def test_shuffle_preserves_structure(self):
+        tok, batch = self._setup()
+        normal = build_aux_sft_batch(batch, tok, placebo_shuffle=False)
+        placebo = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
+        assert len(normal) == len(placebo)  # 行数一致 (计算量对齐)
+        assert placebo.batch['aux_token_mask'].sum() > 0  # 掩码结构完好
+
+    def test_shuffle_is_permutation_of_same_golds(self):
+        tok, batch = self._setup()
+        placebo = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
+        texts = " ".join(tok.decode(placebo.batch['responses'][r]) for r in range(len(placebo)))
+        for i in range(6):  # 每个 gold 都还在批里 (置换而非替换)
+            assert f"g{i}" in texts
+
+    def test_shuffle_deterministic_by_seed(self):
+        tok, batch = self._setup()
+        a = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
+        b = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
+        assert (a.batch['responses'] == b.batch['responses']).all()

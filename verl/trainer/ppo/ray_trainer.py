@@ -1401,6 +1401,7 @@ class RayPPOTrainer:
                                     batch, self.tokenizer,
                                     fraction=float(aux_cfg.get("fraction", 1.0)),
                                     seed=self.global_steps,
+                                    placebo_shuffle=bool(aux_cfg.get("placebo_shuffle", False)),
                                 )
                                 if aux_batch is not None:
                                     n_aux = len(aux_batch)

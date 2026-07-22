@@ -42,7 +42,7 @@ _PREDICT_BLOCK_RE = re.compile(r'<predict>.*?</predict>', re.DOTALL | re.IGNOREC
 
 
 def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
-                        seed: int = 0) -> Optional[DataProto]:
+                        seed: int = 0, placebo_shuffle: bool = False) -> Optional[DataProto]:
     """
     从训练 batch 构造辅助 SFT 批。
 
@@ -51,6 +51,10 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
     responses/input_ids/attention_mask/position_ids 重建,新增 aux_token_mask。
     advantages/old_log_probs 留给 trainer 端在 compute_log_prob 后填充。
     返回 None 表示无可用行。
+
+    placebo_shuffle (R12c 安慰剂): gold 串在候选行间随机置换 —— 破坏信号内容,
+    完整保留计算量/更新次数/掩码结构。R12 > R12c 才能把增益归因于信号内容
+    而非"每步多一次梯度更新"。
     """
     if 'gold_predict' not in batch.non_tensor_batch:
         return None
@@ -80,6 +84,13 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
         keep = max(1, int(len(candidates) * fraction))
         candidates = sorted(rng.choice(candidates, size=keep, replace=False).tolist())
 
+    gold_map = {i: golds[i] for i in candidates}
+    if placebo_shuffle and len(candidates) > 1:
+        perm_rng = np.random.RandomState(seed + 7919)
+        perm = perm_rng.permutation(len(candidates))
+        gold_map = {candidates[r]: golds[candidates[perm[r]]]
+                    for r in range(len(candidates))}
+
     idx = torch.as_tensor(candidates, dtype=torch.long)
     new_responses = torch.full((len(candidates), resp_len), pad_id, dtype=responses.dtype)
     aux_token_mask = torch.zeros((len(candidates), resp_len), dtype=torch.float32)
@@ -89,7 +100,7 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
         resp_text = tokenizer.decode(responses[i], skip_special_tokens=True)
         m = _PREDICT_BLOCK_RE.search(resp_text)
         prefix, suffix = resp_text[:m.start()], resp_text[m.end():]
-        gold_block = f"<predict>{golds[i]}</predict>"
+        gold_block = f"<predict>{gold_map[i]}</predict>"
         # 逐段 tokenize 拼接 → gold 段 token 区间精确已知 (边界合并差异可接受,
         # 强制目标即定义本身)
         prefix_ids = tokenizer.encode(prefix, add_special_tokens=False)
