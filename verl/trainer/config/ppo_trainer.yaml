@@ -321,6 +321,7 @@ env:
       horizon: 1 # 预测步长 k; 目前仅支持 1
       feature_protocol: schema # schema (v0.2 任务无关协议,默认) | task_targets (v0.1 兼容,复现 pilot 用)
       feature_weights: null # null = 各协议的默认权重 (schema: location 0.5/objects_visible 0.5; task_targets: 见 create_alfworld_feature_extractor)
+      reward_mode: potential # potential (Φ_t−Φ_{t−1}, 默认) | raw (Φ_t) | delta_clip (R41 进步奖励: clip(Φ_t−Φ_{t−1},0,1), 掌握后组内方差按构造归零)
       collect_gold: False # S6 监督辅助损失臂: 采集事后正确 predict 串 (设计 §8.1)
     self_report: # 自报告对照臂 (设计 §10): 信心自评无外部验证; 与 prediction/anchor_qa 互斥
       enable: False # 臂配方: enable=True + algorithm.pred_reward.enable=True (pred_* 指标语义 = 平均自报信心)
@@ -351,6 +352,7 @@ env:
       enable: False
       horizon: 1
       feature_weights: null # null = features.py 默认 (location 0.5 / objects_visible 0.5)
+      reward_mode: potential # 同 env.alfworld.prediction.reward_mode (R41: delta_clip)
       predict_device_states: False # C-sweep: predict 块加 device_states 字段 (配 feature_weights 里 device_state>0; C-sweep 臂需把 objects_visible 权重设 0)
       predict_vault_openable: False # 臂 D (上界 Φ): predict 块加 vault_openable 字段 (特权 latent 验证; 配 feature_weights vault_openable>0; 与 predict_device_states 互斥)
       collect_gold: False # S6: 同 env.alfworld.prediction.collect_gold

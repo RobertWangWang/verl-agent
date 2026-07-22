@@ -162,6 +162,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 history_length=config.env.history_length,
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
+                reward_mode=pred_cfg.get('reward_mode', 'potential'),
             )
         else:
             self.memory = SimpleMemory()
@@ -803,6 +804,7 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 history_length=config.env.history_length,
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
+                reward_mode=pred_cfg.get('reward_mode', 'potential'),
             )
         else:
             self.memory = SimpleMemory()

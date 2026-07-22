@@ -142,3 +142,9 @@ docs/hiddenrule_gym_design.md
 docs/ps_grpo_integration_design.md
 docs/8gpu_compute_justification*.md
 docs/grpo_baseline_guide.md
+draft_*.md
+peer-review-*.docx
+summary_*.md
+summary_*.pdf
+research_plot/
+logs/

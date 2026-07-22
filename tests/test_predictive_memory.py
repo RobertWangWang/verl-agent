@@ -258,3 +258,69 @@ def test_summary_empty_history():
     memory = PredictiveMemory()
     memory.reset(batch_size=1)
     assert memory.get_summary_for_prompt(env_idx=0) == "No history yet."
+
+
+# ---------------------------------------------------------------------------
+# R41: delta_clip 进步奖励 (clip(Φ_t − Φ_{t−1}, 0, 1))
+# ---------------------------------------------------------------------------
+
+class TestDeltaClipRewardMode:
+    def test_progress_is_rewarded(self):
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='delta_clip')
+        memory.reset(batch_size=1)
+        r1 = memory.compute_prediction_reward(env_idx=0, turn=1, current_accuracy=0.2)
+        assert r1.shaped_reward == pytest.approx(0.2)
+        r2 = memory.compute_prediction_reward(env_idx=0, turn=2, current_accuracy=0.5)
+        assert r2.shaped_reward == pytest.approx(0.3)
+
+    def test_regression_clipped_to_zero(self):
+        """回落不惩罚: 与 potential 模式的关键差别 (负向噪声被截断)。"""
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='delta_clip')
+        memory.reset(batch_size=1)
+        memory.compute_prediction_reward(env_idx=0, turn=1, current_accuracy=0.8)
+        r2 = memory.compute_prediction_reward(env_idx=0, turn=2, current_accuracy=0.3)
+        assert r2.shaped_reward == 0.0
+
+    def test_saturation_variance_is_zero_by_construction(self):
+        """方差轮廓注册预测的机制核: 掌握后 (Φ 恒 1.0) 每步 Δ=0,
+        全败组内的 r_pred 逐点相等 → std 归一化没有可放大的组内方差。"""
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='delta_clip')
+        memory.reset(batch_size=4)
+        rewards = []
+        for turn in range(1, 6):
+            for env in range(4):
+                r = memory.compute_prediction_reward(env, turn, current_accuracy=1.0)
+                if turn > 1:
+                    rewards.append(r.shaped_reward)
+        assert rewards == [0.0] * len(rewards)
+
+    def test_prev_accuracy_still_tracked_after_clip(self):
+        """clip 只作用于奖励, potential 追踪不受影响: 0.8→0.3→0.6 时
+        第三步应按 0.6−0.3=0.3 计, 而不是 0.6−0.8。"""
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='delta_clip')
+        memory.reset(batch_size=1)
+        memory.compute_prediction_reward(env_idx=0, turn=1, current_accuracy=0.8)
+        memory.compute_prediction_reward(env_idx=0, turn=2, current_accuracy=0.3)
+        r3 = memory.compute_prediction_reward(env_idx=0, turn=3, current_accuracy=0.6)
+        assert r3.shaped_reward == pytest.approx(0.3)
+
+    def test_reward_mode_overrides_legacy_flag(self):
+        memory = PredictiveMemory(use_potential_shaping=True, reward_mode='raw')
+        assert memory.reward_mode == 'raw'
+        legacy = PredictiveMemory(use_potential_shaping=False)
+        assert legacy.reward_mode == 'raw'
+        default = PredictiveMemory()
+        assert default.reward_mode == 'potential'
+
+    def test_unknown_mode_rejected(self):
+        with pytest.raises(AssertionError):
+            PredictiveMemory(reward_mode='delta')
+
+    def test_hybrid_memory_passthrough(self):
+        hybrid = HybridMemory(history_length=2, prediction_horizon=1,
+                              lambda_pred=1.0, reward_mode='delta_clip')
+        assert hybrid.memory.reward_mode == 'delta_clip'
+        hybrid.reset(batch_size=1)
+        hybrid.compute_prediction_reward(0, 1, 0.9)
+        r2 = hybrid.compute_prediction_reward(0, 2, 0.4)
+        assert r2.shaped_reward == 0.0

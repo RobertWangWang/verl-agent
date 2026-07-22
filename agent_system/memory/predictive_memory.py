@@ -62,21 +62,32 @@ class PredictiveMemory(BaseMemory):
     3. 计算预测准确率作为奖励信号
     """
 
+    REWARD_MODES = ('potential', 'raw', 'delta_clip')
+
     def __init__(
         self,
         prediction_horizon: int = 3,
         lambda_pred: float = 0.1,
-        use_potential_shaping: bool = True
+        use_potential_shaping: bool = True,
+        reward_mode: str = None
     ):
         """
         Args:
             prediction_horizon: 预测未来多少步的特征 (默认3步)
             lambda_pred: 预测奖励的权重系数
-            use_potential_shaping: 是否使用 potential-based shaping
+            use_potential_shaping: 是否使用 potential-based shaping (兼容参数;
+                reward_mode 显式给出时以 reward_mode 为准)
+            reward_mode: potential (Φ_t−Φ_{t−1}) | raw (Φ_t) |
+                delta_clip (clip(Φ_t−Φ_{t−1}, 0, 1), R41 进步奖励:
+                掌握后 Δ→0 且负向噪声被截断 → 组内方差按构造归零)
         """
+        if reward_mode is None:
+            reward_mode = 'potential' if use_potential_shaping else 'raw'
+        assert reward_mode in self.REWARD_MODES, f"unknown reward_mode: {reward_mode}"
         self.prediction_horizon = prediction_horizon
         self.lambda_pred = lambda_pred
-        self.use_potential_shaping = use_potential_shaping
+        self.use_potential_shaping = reward_mode == 'potential'
+        self.reward_mode = reward_mode
 
         # 历史数据存储 (同 SimpleMemory)
         self._data = None
@@ -262,12 +273,17 @@ class PredictiveMemory(BaseMemory):
         Returns:
             PredictionReward: 预测奖励
         """
-        if self.use_potential_shaping:
+        if self.reward_mode == 'potential':
             # Potential-based shaping
             prev_accuracy = self.prev_prediction_accuracy[env_idx]
             shaped_reward = current_accuracy - prev_accuracy  # Φ(s_t) - Φ(s_{t-1})
+        elif self.reward_mode == 'delta_clip':
+            # R41 进步奖励: 只奖励准确率的提升, 回落不惩罚 (clip 下界 0)。
+            # 掌握后 Δ≈0、噪声负向被截 → 全败组内方差按构造归零, std 归一化无弹药可放大。
+            prev_accuracy = self.prev_prediction_accuracy[env_idx]
+            shaped_reward = min(1.0, max(0.0, current_accuracy - prev_accuracy))
         else:
-            # 直接使用准确率作为奖励
+            # raw: 直接使用准确率作为奖励
             shaped_reward = current_accuracy
 
         # 加权
@@ -345,7 +361,8 @@ class HybridMemory(BaseMemory):
         history_length: int = 2,
         prediction_horizon: int = 3,
         lambda_pred: float = 0.1,
-        enable_prediction: bool = True
+        enable_prediction: bool = True,
+        reward_mode: str = None
     ):
         """
         Args:
@@ -353,6 +370,7 @@ class HybridMemory(BaseMemory):
             prediction_horizon: 预测步长
             lambda_pred: 预测奖励权重
             enable_prediction: 是否启用预测功能
+            reward_mode: 见 PredictiveMemory.reward_mode (None = potential)
         """
         self.history_length = history_length
         self.enable_prediction = enable_prediction
@@ -360,7 +378,8 @@ class HybridMemory(BaseMemory):
         # 使用 PredictiveMemory 作为底层实现
         self.memory = PredictiveMemory(
             prediction_horizon=prediction_horizon,
-            lambda_pred=lambda_pred
+            lambda_pred=lambda_pred,
+            reward_mode=reward_mode
         )
 
     def __len__(self):
