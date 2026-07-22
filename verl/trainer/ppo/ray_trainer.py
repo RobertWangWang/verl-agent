@@ -284,6 +284,59 @@ def apply_prediction_reward(data: DataProto, lambda_pred: float):
     return data, metrics
 
 
+def compute_group_outcome_metrics(data: DataProto):
+    """
+    全败组占比动态 (评审重大3): 机理链断言"全败组是 std 放大器的弹药库",
+    此函数逐步记录 batch 内 uid 组的成败构成。必须在 invalid penalty 与
+    r_pred 注入**之前**调用 (token_level_scores 尚为纯任务奖励)。
+
+    轨迹成功判据: 该轨迹全部 step 样本的 token_level_scores 之和 > 0
+    (ALFWorld: 成功 +10 / 失败 0)。返回 (metrics, all_fail_uids) —
+    后者供 R43 过滤对照臂 (apply_all_fail_group_filter) 复用。
+    """
+    from collections import defaultdict
+    scores = data.batch['token_level_scores'].sum(-1)
+    traj_uid = data.non_tensor_batch['traj_uid']
+    uid = data.non_tensor_batch['uid']
+    traj_score = defaultdict(float)
+    traj_group = {}
+    for i in range(len(data)):
+        traj_score[traj_uid[i]] += float(scores[i])
+        traj_group[traj_uid[i]] = uid[i]
+    groups = defaultdict(list)
+    for t, g in traj_group.items():
+        groups[g].append(traj_score[t] > 0)
+    n = max(len(groups), 1)
+    all_fail_uids = {g for g, outcomes in groups.items() if not any(outcomes)}
+    all_succ = sum(1 for outcomes in groups.values() if all(outcomes))
+    metrics = {
+        'batch/all_fail_group_frac': len(all_fail_uids) / n,
+        'batch/all_success_group_frac': all_succ / n,
+        'batch/mixed_group_frac': 1.0 - (len(all_fail_uids) + all_succ) / n,
+    }
+    return metrics, all_fail_uids
+
+
+def apply_all_fail_group_filter(data: DataProto, all_fail_uids: set):
+    """
+    R43 (RAFT 式过滤对照臂, 评审重大4): std 归一化保持原样, 但把全败组样本的
+    优势整体置零 —— 等效于把这些组从策略更新中过滤掉 (RAFT/Reinforce-Rej 的
+    "GRPO 收益来自过滤全错组"假说)。与 R37 (mean-only) 构成归因判别:
+    若过滤也拯救 → 拯救部分归因于过滤效应; 若照崩 → std 放大机制独立坐实。
+    在 compute_advantage (及可选的 decoupled pred 优势) 之后调用。
+    """
+    uid = data.non_tensor_batch['uid']
+    mask = torch.tensor([u in all_fail_uids for u in uid], dtype=torch.bool)
+    n_filtered = int(mask.sum())
+    if n_filtered:
+        data.batch['advantages'][mask] = 0.0
+    metrics = {
+        'batch/filtered_all_fail_samples': n_filtered,
+        'batch/filtered_sample_frac': n_filtered / max(len(data), 1),
+    }
+    return data, metrics
+
+
 def apply_decoupled_pred_advantage(data: DataProto, lambda_pred: float,
                                    norm_by_std: bool = True, eps: float = 1e-6):
     """
@@ -1311,6 +1364,12 @@ class RayPPOTrainer:
                         if reward_extra_infos_dict:
                             batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
 
+                        # 全败组占比动态 (纯任务奖励口径: penalty/r_pred 注入之前)
+                        all_fail_uids = set()
+                        if 'traj_uid' in batch.non_tensor_batch and 'uid' in batch.non_tensor_batch:
+                            group_outcome_metrics, all_fail_uids = compute_group_outcome_metrics(batch)
+                            metrics.update(group_outcome_metrics)
+
                         # compute rewards. apply_invalid_action_penalty if available
                         if self.config.actor_rollout_ref.actor.get('use_invalid_action_penalty', True):
                             batch, invalid_metrics = apply_invalid_action_penalty(batch,
@@ -1357,6 +1416,11 @@ class RayPPOTrainer:
                             gigpo_enable_similarity= self.config.algorithm.gigpo.enable_similarity,
                             gigpo_similarity_thresh=self.config.algorithm.gigpo.similarity_thresh,
                         )
+
+                        # R43: RAFT 式全败组过滤对照臂 (std 保持, 全败组优势置零)
+                        if self.config.algorithm.get('filter_all_fail_groups', False) and all_fail_uids:
+                            batch, filter_metrics = apply_all_fail_group_filter(batch, all_fail_uids)
+                            metrics.update(filter_metrics)
 
                         # R38: pred 通道独立组归一化后按 λ 叠加进优势 (GDPO 式解耦)
                         if pred_decoupled:

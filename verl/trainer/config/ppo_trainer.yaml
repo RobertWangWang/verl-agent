@@ -252,6 +252,7 @@ algorithm:
     mode: "mean_norm" # "mean_norm" or "mean_std_norm"
     enable_similarity: False # whether to use similarity-based anchor state grouping in GiGPO (supported for text-only tasks)
     similarity_thresh: 0.95 # similarity threshold for GiGPO (0.0, 1.0)
+  filter_all_fail_groups: False # R43 过滤对照臂: std 保持原样, 全败组样本优势置零 (RAFT 式过滤归因判别; 与 batch/all_fail_group_frac 指标配套)
   pred_reward: # PS-GRPO 预测充分性奖励注入 (docs/ps_grpo_integration_design.md §2D)
     enable: False # 需同时开启 env.<env>.prediction.enable 采集才生效
     lambda: 0.1 # 注入系数 λ; 总奖励 = 任务奖励 + λ·r_pred (r_pred 逐 step 注入)
