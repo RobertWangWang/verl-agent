@@ -151,6 +151,7 @@ class TestApplySupervision:
 class TestInterferenceMetrics:
     def test_aligned_shift_positive(self):
         import torch
+
         from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
         pre = torch.zeros(2, 4)
         post = torch.full((2, 4), 0.5)
@@ -161,6 +162,7 @@ class TestInterferenceMetrics:
 
     def test_conflict_shift_negative_and_masked(self):
         import torch
+
         from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
         pre = torch.zeros(1, 4)
         post = torch.tensor([[-1.0, -1.0, 99.0, 99.0]])
@@ -171,6 +173,7 @@ class TestInterferenceMetrics:
 
     def test_empty_mask_no_nan(self):
         import torch
+
         from agent_system.multi_turn_rollout.aux_sft import compute_interference_metrics
         m = compute_interference_metrics(torch.zeros(1, 3), torch.ones(1, 3), torch.zeros(1, 3))
         assert m['aux_sft/task_shift_mean'] == 0.0
@@ -224,8 +227,7 @@ class TestRandomVocabPlacebo:
         return tok, batch
 
     def test_replaces_all_golds_with_placebo_vocab(self):
-        from agent_system.multi_turn_rollout.aux_sft import (
-            _PLACEBO_LOCATIONS, _PLACEBO_OBJECTS)
+        from agent_system.multi_turn_rollout.aux_sft import _PLACEBO_LOCATIONS, _PLACEBO_OBJECTS
         tok, batch = self._setup()
         aux = build_aux_sft_batch(batch, tok, placebo_mode='random_vocab')
         assert aux is not None and len(aux) == 6
@@ -239,6 +241,7 @@ class TestRandomVocabPlacebo:
     def test_placebo_strings_are_parseable_format(self):
         """格式合法性: 生成串能被验证器解析 (与 gold 同构的字段结构)。"""
         import numpy as np
+
         from agent_system.environments.verifiable_features import parse_predict_block
         from agent_system.multi_turn_rollout.aux_sft import _random_vocab_gold
         rng = np.random.RandomState(0)
