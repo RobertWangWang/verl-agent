@@ -324,3 +324,43 @@ class TestDeltaClipRewardMode:
         hybrid.compute_prediction_reward(0, 1, 0.9)
         r2 = hybrid.compute_prediction_reward(0, 2, 0.4)
         assert r2.shaped_reward == 0.0
+
+
+# ---------------------------------------------------------------------------
+# R45: random_potential 噪声对照 (势差同构 + 内容随机)
+# ---------------------------------------------------------------------------
+
+class TestRandomPotentialMode:
+    def test_ignores_real_accuracy(self):
+        """喂固定准确率, 奖励仍随机波动 —— 内容脱钩确认。"""
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='random_potential')
+        memory.reset(batch_size=1)
+        rewards = [memory.compute_prediction_reward(0, t, current_accuracy=1.0).shaped_reward
+                   for t in range(1, 9)]
+        assert len(set(round(r, 6) for r in rewards)) > 3  # 非常数
+
+    def test_variance_never_vanishes(self):
+        """与 delta_clip 相反: 组内方差永存 —— 判据预测其在 std 下致死。"""
+        import numpy as np
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='random_potential')
+        memory.reset(batch_size=4)
+        late = [[memory.compute_prediction_reward(e, t, 1.0).shaped_reward
+                 for e in range(4)] for t in range(1, 30)]
+        assert np.std(late[-1]) > 0.05
+
+    def test_telescoping_form_preserved(self):
+        """势差结构保持: 累计和 = 末Φ − 初Φ ∈ [-1, 1]。"""
+        memory = PredictiveMemory(lambda_pred=1.0, reward_mode='random_potential')
+        memory.reset(batch_size=1)
+        total = sum(memory.compute_prediction_reward(0, t, 0.5).shaped_reward
+                    for t in range(1, 40))
+        assert -1.0 <= total <= 1.0
+
+    def test_deterministic_across_resets(self):
+        m1 = PredictiveMemory(lambda_pred=1.0, reward_mode='random_potential')
+        m1.reset(batch_size=2)
+        s1 = [m1.compute_prediction_reward(0, t, 0.5).shaped_reward for t in range(1, 5)]
+        m2 = PredictiveMemory(lambda_pred=1.0, reward_mode='random_potential')
+        m2.reset(batch_size=2)
+        s2 = [m2.compute_prediction_reward(0, t, 0.5).shaped_reward for t in range(1, 5)]
+        assert s1 == s2

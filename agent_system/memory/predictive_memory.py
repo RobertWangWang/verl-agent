@@ -62,7 +62,7 @@ class PredictiveMemory(BaseMemory):
     3. 计算预测准确率作为奖励信号
     """
 
-    REWARD_MODES = ('potential', 'raw', 'delta_clip')
+    REWARD_MODES = ('potential', 'raw', 'delta_clip', 'random_potential')
 
     def __init__(
         self,
@@ -79,7 +79,11 @@ class PredictiveMemory(BaseMemory):
                 reward_mode 显式给出时以 reward_mode 为准)
             reward_mode: potential (Φ_t−Φ_{t−1}) | raw (Φ_t) |
                 delta_clip (clip(Φ_t−Φ_{t−1}, 0, 1), R41 进步奖励:
-                掌握后 Δ→0 且负向噪声被截断 → 组内方差按构造归零)
+                掌握后 Δ→0 且负向噪声被截断 → 组内方差按构造归零) |
+                random_potential (R45 匹配方差噪声对照: 势差同构但 Φ 换成与
+                预测内容完全无关的均匀随机值 —— 组内方差永存。判"predictability
+                叙事 vs 纯归一化伪影": 同样致死 → 内容无关、伪影坐实; 不死 →
+                内容相关性成立)
         """
         if reward_mode is None:
             reward_mode = 'potential' if use_potential_shaping else 'raw'
@@ -100,6 +104,8 @@ class PredictiveMemory(BaseMemory):
 
         # 用于 potential-based shaping 的上一步预测准确率
         self.prev_prediction_accuracy: List[float] = []
+        # R45: 噪声势的确定性随机流 (reset 时按 batch 重建)
+        self._noise_rng = None
 
     def __len__(self):
         return len(self._data) if self._data else 0
@@ -119,6 +125,9 @@ class PredictiveMemory(BaseMemory):
         self.predictions = [{} for _ in range(batch_size)]
         self.prediction_rewards = []
         self.prev_prediction_accuracy = [0.0] * batch_size
+        if self.reward_mode == 'random_potential':
+            import numpy as _np
+            self._noise_rng = _np.random.RandomState(15485863 + batch_size)
 
     def store(self, record: Dict[str, List[Any]]):
         """
@@ -273,7 +282,11 @@ class PredictiveMemory(BaseMemory):
         Returns:
             PredictionReward: 预测奖励
         """
-        if self.reward_mode == 'potential':
+        if self.reward_mode == 'random_potential':
+            # R45: 丢弃真实准确率, 换均匀随机 Φ —— 势差结构/λ/注入路径全同,
+            # 唯一差异是内容与预测无关。组内方差与 potential 模式同阶且永不归零。
+            current_accuracy = float(self._noise_rng.rand())
+        if self.reward_mode in ('potential', 'random_potential'):
             # Potential-based shaping
             prev_accuracy = self.prev_prediction_accuracy[env_idx]
             shaped_reward = current_accuracy - prev_accuracy  # Φ(s_t) - Φ(s_{t-1})
