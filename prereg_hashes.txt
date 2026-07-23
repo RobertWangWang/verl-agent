@@ -1,0 +1,6 @@
+# Preregistration digests (SHA256 of full prediction text; plaintext held privately)
+
+2026-07-23  R45-prereg  sha256:377940bdb4be769c27868623de61fefa2ee23eaa26a222a298f09d625e2baf93
+2026-07-23  R41-prereg  sha256:e7606fdfd983cd4985ea9ebac79b4c0d7473dc04198e91aacc01933f781524f8
+2026-07-23  R44-prereg  sha256:0f07bb6b246e05349c437d004d1a19bf32220caaf64f722acbce79743f3976d9
+2026-07-23  R12d-prereg  sha256:1b7d9647b5ef2efbaf31c6fc0b4619d6d22fe6e22a371148ba46a7bcd5ba7e80
