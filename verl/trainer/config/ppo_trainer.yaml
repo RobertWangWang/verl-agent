@@ -266,7 +266,8 @@ algorithm:
     beta: 0.1 # 教师强制 CE 权重 (经 PPO 通道的常数优势实现; 与 λ 同量级对齐)
     fraction: 1.0 # 参与辅助更新的 step-sample 比例 (update 开销敏感时下采样)
     interference_probe: True # 干扰探针: aux 更新前后任务批 logp 位移 (task_shift_mean/meanabs; ~+2 次 compute_log_prob 每步)
-    placebo_shuffle: False # R12c 安慰剂: gold 批内随机置换 (破坏信号内容, 保持计算/更新次数) —— R12>R12c 才归因信号内容
+    placebo_shuffle: False # R12c 弱安慰剂 (= placebo_mode: shuffle 的兼容开关): gold 批内随机置换。判决: R12c(76.0)≈R12(69.3), 只证"精确配对非必要"
+    placebo_mode: null # null | shuffle (R12c) | random_vocab (R12d 强安慰剂: 格式合法+环境无关词表 —— 也涨→纯更新/格式效应; 不涨→活性成分=环境统计量)
   filter_groups: # DAPO from https://arxiv.org/abs/2503.14476
     enable: False
     max_num_gen_batches: 10

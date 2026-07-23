@@ -40,9 +40,39 @@ from verl.utils.model import compute_position_id_with_mask
 
 _PREDICT_BLOCK_RE = re.compile(r'<predict>.*?</predict>', re.DOTALL | re.IGNORECASE)
 
+# R12d 强安慰剂词表: 真实英文词但与 ALFWorld 家居域完全不相交 ——
+# 保持 tokenization 自然与格式合法, 同时切断环境边际统计量。
+_PLACEBO_LOCATIONS = [
+    'observatory dome 1', 'tidal basin 2', 'granite quarry 3', 'velvet pergola 1',
+    'lunar greenhouse 2', 'copper foundry 1', 'juniper arbor 3', 'marble colonnade 2',
+]
+_PLACEBO_OBJECTS = [
+    'astrolabe', 'metronome', 'theremin', 'sextant', 'zither', 'gyroscope',
+    'barometer', 'tuning fork', 'kaleidoscope', 'sundial', 'harmonica', 'compass rose',
+]
+
+PLACEBO_MODES = (None, 'shuffle', 'random_vocab')
+
+
+def _random_vocab_gold(rng: np.random.RandomState) -> str:
+    """R12d: 生成格式合法但环境无关的 gold 串 (字段顺序与 gold_predict_string 一致)。"""
+    parts = []
+    loc = rng.choice(_PLACEBO_LOCATIONS) if rng.rand() < 0.7 else 'none'
+    parts.append(f"next_location: {loc}")
+    if rng.rand() < 0.7:
+        parts.append("objects_visible: yes")
+        n = rng.randint(1, 4)
+        objs = rng.choice(_PLACEBO_OBJECTS, size=n, replace=False)
+        parts.append(f"visible_objects: {', '.join(objs)}")
+    else:
+        parts.append("objects_visible: no")
+        parts.append("visible_objects: none")
+    return '\n'.join(parts)
+
 
 def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
-                        seed: int = 0, placebo_shuffle: bool = False) -> Optional[DataProto]:
+                        seed: int = 0, placebo_shuffle: bool = False,
+                        placebo_mode: str = None) -> Optional[DataProto]:
     """
     从训练 batch 构造辅助 SFT 批。
 
@@ -52,10 +82,17 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
     advantages/old_log_probs 留给 trainer 端在 compute_log_prob 后填充。
     返回 None 表示无可用行。
 
-    placebo_shuffle (R12c 安慰剂): gold 串在候选行间随机置换 —— 破坏信号内容,
-    完整保留计算量/更新次数/掩码结构。R12 > R12c 才能把增益归因于信号内容
-    而非"每步多一次梯度更新"。
+    placebo_shuffle (R12c 安慰剂, 兼容参数 = placebo_mode='shuffle'): gold 串在候选
+    行间随机置换 —— 破坏内容-情境配对, 保留计算量/更新次数/掩码结构。
+    ⚠️ R12c 判决 (2026-07-23): 批内置换是**弱**安慰剂 —— ~10% 同组 gold 可能大面积
+    正确 + 词表/格式共享, R12c(76.0) ≈ R12(69.3) 只证明"精确配对非必要"。
+    placebo_mode='random_vocab' (R12d 强安慰剂): gold 整体替换为格式合法但
+    环境无关词表的串 —— R12d 也涨 → 纯更新/格式效应; 不涨 → 活性成分 =
+    环境边际统计量。
     """
+    if placebo_mode is None and placebo_shuffle:
+        placebo_mode = 'shuffle'
+    assert placebo_mode in PLACEBO_MODES, f"unknown placebo_mode: {placebo_mode}"
     if 'gold_predict' not in batch.non_tensor_batch:
         return None
     golds = batch.non_tensor_batch['gold_predict']
@@ -85,11 +122,14 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
         candidates = sorted(rng.choice(candidates, size=keep, replace=False).tolist())
 
     gold_map = {i: golds[i] for i in candidates}
-    if placebo_shuffle and len(candidates) > 1:
+    if placebo_mode == 'shuffle' and len(candidates) > 1:
         perm_rng = np.random.RandomState(seed + 7919)
         perm = perm_rng.permutation(len(candidates))
         gold_map = {candidates[r]: golds[candidates[perm[r]]]
                     for r in range(len(candidates))}
+    elif placebo_mode == 'random_vocab':
+        vocab_rng = np.random.RandomState(seed + 104729)
+        gold_map = {i: _random_vocab_gold(vocab_rng) for i in candidates}
 
     idx = torch.as_tensor(candidates, dtype=torch.long)
     new_responses = torch.full((len(candidates), resp_len), pad_id, dtype=responses.dtype)

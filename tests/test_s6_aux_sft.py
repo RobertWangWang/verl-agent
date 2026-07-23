@@ -212,3 +212,54 @@ class TestPlaceboShuffle:
         a = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
         b = build_aux_sft_batch(batch, tok, placebo_shuffle=True, seed=3)
         assert (a.batch['responses'] == b.batch['responses']).all()
+
+
+class TestRandomVocabPlacebo:
+    """R12d 强安慰剂: 格式合法 + 环境无关词表的 gold 替换。"""
+
+    def _setup(self):
+        golds = [f"next_location: drawer {i}\nobjects_visible: yes\nvisible_objects: apple" for i in range(6)]
+        resp_texts = [f"a<predict>x</predict>b{i}" for i in range(6)]
+        batch, tok = _make_batch(resp_texts, golds)
+        return tok, batch
+
+    def test_replaces_all_golds_with_placebo_vocab(self):
+        from agent_system.multi_turn_rollout.aux_sft import (
+            _PLACEBO_LOCATIONS, _PLACEBO_OBJECTS)
+        tok, batch = self._setup()
+        aux = build_aux_sft_batch(batch, tok, placebo_mode='random_vocab')
+        assert aux is not None and len(aux) == 6
+        texts = [tok.decode(aux.batch['responses'][r]) for r in range(len(aux))]
+        vocab = set(_PLACEBO_LOCATIONS) | set(_PLACEBO_OBJECTS)
+        for t in texts:
+            # 真实 gold 的家居词不得出现; 至少一个安慰剂词出现或显式 none
+            assert 'drawer' not in t and 'apple' not in t
+            assert any(w in t for w in vocab) or 'objects_visible: no' in t
+
+    def test_placebo_strings_are_parseable_format(self):
+        """格式合法性: 生成串能被验证器解析 (与 gold 同构的字段结构)。"""
+        import numpy as np
+        from agent_system.environments.verifiable_features import parse_predict_block
+        from agent_system.multi_turn_rollout.aux_sft import _random_vocab_gold
+        rng = np.random.RandomState(0)
+        for _ in range(20):
+            s = _random_vocab_gold(rng)
+            parsed = parse_predict_block(f"<predict>{s}</predict>")
+            assert parsed is not None
+
+    def test_deterministic_given_seed(self):
+        tok, batch = self._setup()
+        a1 = build_aux_sft_batch(batch, tok, seed=3, placebo_mode='random_vocab')
+        a2 = build_aux_sft_batch(batch, tok, seed=3, placebo_mode='random_vocab')
+        assert torch.equal(a1.batch['responses'], a2.batch['responses'])
+
+    def test_legacy_shuffle_flag_maps_to_mode(self):
+        tok, batch = self._setup()
+        via_flag = build_aux_sft_batch(batch, tok, seed=1, placebo_shuffle=True)
+        via_mode = build_aux_sft_batch(batch, tok, seed=1, placebo_mode='shuffle')
+        assert torch.equal(via_flag.batch['responses'], via_mode.batch['responses'])
+
+    def test_unknown_mode_rejected(self):
+        tok, batch = self._setup()
+        with pytest.raises(AssertionError):
+            build_aux_sft_batch(batch, tok, placebo_mode='noise')
