@@ -267,7 +267,7 @@ algorithm:
     fraction: 1.0 # 参与辅助更新的 step-sample 比例 (update 开销敏感时下采样)
     interference_probe: True # 干扰探针: aux 更新前后任务批 logp 位移 (task_shift_mean/meanabs; ~+2 次 compute_log_prob 每步)
     placebo_shuffle: False # R12c 弱安慰剂 (= placebo_mode: shuffle 的兼容开关): gold 批内随机置换。判决: R12c(76.0)≈R12(69.3), 只证"精确配对非必要"
-    placebo_mode: null # null | shuffle (R12c) | random_vocab (R12d 强安慰剂: 格式合法+环境无关词表 —— 也涨→纯更新/格式效应; 不涨→活性成分=环境统计量)
+    placebo_mode: null # null | shuffle (R12c) | random_vocab (R12d: 判决=正则化效应) | random_tokens (R46b 格式剥离: 域外词+无schema, 分离格式锚定 vs 纯算力)
   filter_groups: # DAPO from https://arxiv.org/abs/2503.14476
     enable: False
     max_num_gen_batches: 10

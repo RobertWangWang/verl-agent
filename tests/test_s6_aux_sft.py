@@ -266,3 +266,34 @@ class TestRandomVocabPlacebo:
         tok, batch = self._setup()
         with pytest.raises(AssertionError):
             build_aux_sft_batch(batch, tok, placebo_mode='noise')
+
+
+class TestRandomTokensPlacebo:
+    """R46b: 格式剥离安慰剂——域外词表 + 无 schema 结构。"""
+
+    def _setup(self):
+        golds = [f"next_location: drawer {i}\nobjects_visible: yes" for i in range(4)]
+        resp_texts = [f"a<predict>x</predict>b{i}" for i in range(4)]
+        batch, tok = _make_batch(resp_texts, golds)
+        return tok, batch
+
+    def test_no_schema_fields_present(self):
+        tok, batch = self._setup()
+        aux = build_aux_sft_batch(batch, tok, placebo_mode='random_tokens')
+        assert aux is not None
+        texts = [tok.decode(aux.batch['responses'][r]) for r in range(len(aux))]
+        for t in texts:
+            assert 'next_location:' not in t and 'objects_visible:' not in t
+            assert 'drawer' not in t
+
+    def test_differs_from_random_vocab(self):
+        tok, batch = self._setup()
+        a_vocab = build_aux_sft_batch(batch, tok, seed=5, placebo_mode='random_vocab')
+        a_tok = build_aux_sft_batch(batch, tok, seed=5, placebo_mode='random_tokens')
+        assert not torch.equal(a_vocab.batch['responses'], a_tok.batch['responses'])
+
+    def test_deterministic(self):
+        tok, batch = self._setup()
+        a1 = build_aux_sft_batch(batch, tok, seed=2, placebo_mode='random_tokens')
+        a2 = build_aux_sft_batch(batch, tok, seed=2, placebo_mode='random_tokens')
+        assert torch.equal(a1.batch['responses'], a2.batch['responses'])

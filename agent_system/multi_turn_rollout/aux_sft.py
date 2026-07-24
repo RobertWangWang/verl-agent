@@ -51,7 +51,16 @@ _PLACEBO_OBJECTS = [
     'barometer', 'tuning fork', 'kaleidoscope', 'sundial', 'harmonica', 'compass rose',
 ]
 
-PLACEBO_MODES = (None, 'shuffle', 'random_vocab')
+PLACEBO_MODES = (None, 'shuffle', 'random_vocab', 'random_tokens')
+
+
+def _random_tokens_gold(rng: np.random.RandomState) -> str:
+    """R46b 格式剥离安慰剂: 同一域外词表但**无 schema 字段结构**——只剩裸词序列。
+    与 random_vocab 对照可分离"schema 格式锚定"与"纯辅助算力/任意文本 CE"。"""
+    n = rng.randint(6, 13)
+    pool = _PLACEBO_LOCATIONS + _PLACEBO_OBJECTS
+    words = [pool[rng.randint(len(pool))] for _ in range(n)]
+    return ' '.join(words)
 
 
 def _random_vocab_gold(rng: np.random.RandomState) -> str:
@@ -130,6 +139,9 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
     elif placebo_mode == 'random_vocab':
         vocab_rng = np.random.RandomState(seed + 104729)
         gold_map = {i: _random_vocab_gold(vocab_rng) for i in candidates}
+    elif placebo_mode == 'random_tokens':
+        tok_rng = np.random.RandomState(seed + 1299709)
+        gold_map = {i: _random_tokens_gold(tok_rng) for i in candidates}
 
     idx = torch.as_tensor(candidates, dtype=torch.long)
     new_responses = torch.full((len(candidates), resp_len), pad_id, dtype=responses.dtype)
