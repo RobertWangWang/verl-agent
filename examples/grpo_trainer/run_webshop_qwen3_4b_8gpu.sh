@@ -22,7 +22,9 @@ set -x
 ENGINE=${1:-vllm}
 if [ $# -gt 0 ]; then shift; fi
 
-export VLLM_ATTENTION_BACKEND=XFORMERS
+# 注意: 不导出 VLLM_ATTENTION_BACKEND — Blackwell (RTX Pro 6000) 上 XFORMERS 后端
+# 触发 "Paged KV cache block size must be divisible by 256";让 vLLM 自选后端
+# (与 D 机上跑通 150 步的 ALFWorld 4B 脚本一致: eager + 自选后端)
 # 多核服务器 (208 核) 线程包络加固: torch/BLAS 池按核数放大会瞬时打穿容器
 # pids.max (D 机实测启动峰值 20333/20480) — 配合下方 ray_init.num_cpus=32
 export OMP_NUM_THREADS=8
@@ -68,8 +70,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=$ENGINE \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
-    actor_rollout_ref.rollout.enforce_eager=False \
-    actor_rollout_ref.rollout.free_cache_engine=False \
+    actor_rollout_ref.rollout.enforce_eager=True \
+    actor_rollout_ref.rollout.free_cache_engine=True \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
