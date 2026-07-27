@@ -105,15 +105,21 @@ def _get_sim_server(mode: str):
         return sim
 
 
-def _make_env(mode: str, seed: int):
+def _make_env(mode: str, seed: int, session_prefix: str):
     import web_agent_site.envs.web_agent_text_env as wste
     sim = _get_sim_server(mode)
+    # session_prefix 唯一化共享 SimServer 里的 user_sessions key:
+    # GRPO 组内多个 env 用同一 goal idx reset —— 无前缀时它们会共用一个
+    # 服务端会话字典, 互相覆盖 keywords/page/options (500 + 静默数据污染);
+    # 加前缀后 session_id 互异, 而 goal 仍由 reset(session=idx) 的
+    # session_int 精确指定 goals[idx], 组语义无损。
     return wste.WebAgentTextEnv(
         observation_mode='text',
         file_path=MODES[mode]['file_path'],
         attr_path=MODES[mode]['attr_path'],
         server=sim,
         seed=seed,
+        session_prefix=session_prefix,
     )
 
 
@@ -156,8 +162,8 @@ def create_session(req: CreateReq, x_token: str = Header(default='')):
     _check(x_token)
     if req.mode not in MODES:
         raise HTTPException(status_code=400, detail=f'mode must be one of {list(MODES)}')
-    env = _make_env(req.mode, req.seed)
     sid = uuid.uuid4().hex[:16]
+    env = _make_env(req.mode, req.seed, session_prefix=f'{sid}-')
     with _session_lock:
         _sessions[sid] = dict(env=env, mode=req.mode, last=time.time())
     return dict(sid=sid)
