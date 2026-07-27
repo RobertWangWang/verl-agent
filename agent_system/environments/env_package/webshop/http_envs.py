@@ -50,25 +50,38 @@ class _HTTPSession:
         return self._local.s
 
     def _post(self, path: str, payload: dict):
-        last_err = None
+        last_err, last_body = None, ''
         for attempt in range(RETRIES):
             try:
                 r = self._http().post(self.base_url + path, json=payload,
                                       headers=self.headers, timeout=REQUEST_TIMEOUT_S)
+                if r.status_code >= 400:
+                    last_body = r.text[:300]
                 r.raise_for_status()
                 return r.json()
             except Exception as e:  # noqa: BLE001 — 网络抖动统一重试
                 last_err = e
                 import time
                 time.sleep(RETRY_BACKOFF_S * (attempt + 1))
-        raise RuntimeError(f'webshop server call {path} failed after {RETRIES} tries: {last_err}')
+        raise RuntimeError(f'webshop server call {path} failed after {RETRIES} tries: '
+                           f'{last_err}; body={last_body}; payload={str(payload)[:300]}')
 
     def reset(self, idx: int):
         out = self._post('/reset', dict(sid=self.sid, idx=int(idx)))
+        self._last_obs, self._last_info = out['obs'], out['info']
         return out['obs'], out['info']
 
     def step(self, action: str):
-        out = self._post('/step', dict(sid=self.sid, action=action))
+        try:
+            out = self._post('/step', dict(sid=self.sid, action=action))
+        except RuntimeError as e:
+            # 服务端对个别动作 5xx (env 契约: 无效动作 = no-op) — 退化为原地不动,
+            # 记录动作串供离线复现, 不让单个坏动作杀掉整场训练
+            if getattr(self, '_last_obs', None) is None:
+                raise
+            print(f'[webshop-http] WARN step fallback (no-op): {e}')
+            return self._last_obs, 0, False, dict(self._last_info or {}, step_fallback=True)
+        self._last_obs, self._last_info = out['obs'], out['info']
         return out['obs'], out['reward'], out['done'], out['info']
 
     def close(self):

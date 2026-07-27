@@ -64,6 +64,9 @@ class _FakeWebshopHandler(BaseHTTPRequestHandler):
                                  info=dict(available_actions={'has_search_bar': True}, won=False)))
         elif self.path == '/step':
             s = self.sessions[req['sid']]
+            if req['action'] == 'boom500':
+                self._json(500, dict(detail='Internal Server Error'))
+                return
             done = req['action'] == 'click[buy now]'
             self._json(200, dict(
                 obs=f"after-{req['action']}-goal-{s['last_idx']}",
@@ -120,6 +123,16 @@ def test_step_passthrough(fake_server):
     assert rewards == [0, 10.0] and dones == [False, True]
     assert infos[1]['won'] is True and infos[0]['won'] is False
     assert obs[0].startswith('after-search[shoes]')
+    env.close()
+
+
+def test_step_500_falls_back_to_noop(fake_server):
+    env = build_webshop_http_envs(seed=8, env_num=1, group_n=1, server_url=fake_server,
+                                  token=TOKEN, mode='small', is_train=True)
+    obs0, _ = env.reset()
+    obs, rewards, dones, infos = env.step(['boom500'])
+    assert obs[0] == obs0[0] and rewards == [0] and dones == [False]
+    assert infos[0].get('step_fallback') is True
     env.close()
 
 
