@@ -149,7 +149,8 @@ class WebshopHTTPEnv:
         return obs_list, info_list
 
     def close(self):
-        if getattr(self, '_closed', False):
+        # getattr 兜底: __init__ 中途抛异常时 __del__ 仍会调用 close
+        if getattr(self, '_closed', False) or not hasattr(self, '_workers'):
             return
         list(self._pool.map(lambda w: w.close(), self._workers))
         self._pool.shutdown(wait=False)
