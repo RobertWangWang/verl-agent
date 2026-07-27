@@ -13,5 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .http_envs import build_webshop_http_envs
 from .projection import webshop_projection
-from .envs import build_webshop_envs
+
+try:
+    from .envs import build_webshop_envs  # 需要 gym + web_agent_site, 只在 WebShop 专用环境可用
+except ModuleNotFoundError:
+    build_webshop_envs = None
+
+__all__ = ['build_webshop_envs', 'build_webshop_http_envs', 'webshop_projection']

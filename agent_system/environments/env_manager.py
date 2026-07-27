@@ -1008,7 +1008,20 @@ def make_envs(config):
         val_envs = SokobanEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs
     elif "webshop" in config.env.env_name.lower():
-        from agent_system.environments.env_package.webshop import build_webshop_envs, webshop_projection
+        from agent_system.environments.env_package.webshop import build_webshop_envs, build_webshop_http_envs, webshop_projection
+        server_url = config.env.webshop.get('server_url', None)
+        if server_url:
+            # 远程集中式环境服务 (server.py): 本机零数据/零索引/零 Ray actor
+            mode = 'small' if config.env.webshop.use_small else 'all'
+            token = config.env.webshop.get('server_token', 'psgrpo')
+            _envs = build_webshop_http_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, server_url=server_url, token=token, mode=mode, is_train=True)
+            _val_envs = build_webshop_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, mode=mode, is_train=False)
+            projection_f = partial(webshop_projection)
+            envs = WebshopEnvironmentManager(_envs, projection_f, config)
+            val_envs = WebshopEnvironmentManager(_val_envs, projection_f, config)
+            return envs, val_envs
+        if build_webshop_envs is None:
+            raise ModuleNotFoundError("local WebShop path needs the dedicated conda env (gym + web_agent_site); set env.webshop.server_url to use the remote service instead")
         if config.env.webshop.use_small:
             file_path = os.path.join(os.path.dirname(__file__), 'env_package/webshop/webshop/data/items_shuffle_1000.json')
             attr_path = os.path.join(os.path.dirname(__file__), 'env_package/webshop/webshop/data/items_ins_v2_1000.json')

@@ -366,3 +366,5 @@ env:
   webshop:
     use_small: True
     human_goals: False
+    server_url: null   # e.g. https://<tunnel-host>:8443 — set to use the remote env service instead of local Ray workers
+    server_token: psgrpo
