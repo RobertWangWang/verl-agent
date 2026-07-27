@@ -23,6 +23,10 @@ ENGINE=${1:-vllm}
 if [ $# -gt 0 ]; then shift; fi
 
 export VLLM_ATTENTION_BACKEND=XFORMERS
+# 多核服务器 (208 核) 线程包络加固: torch/BLAS 池按核数放大会瞬时打穿容器
+# pids.max (D 机实测启动峰值 20333/20480) — 配合下方 ray_init.num_cpus=32
+export OMP_NUM_THREADS=8
+export MKL_NUM_THREADS=8
 
 EXPERIMENT=${EXPERIMENT:-webshop_qwen3_4b_base_small}
 WEBSHOP_URL=${WEBSHOP_URL:?set WEBSHOP_URL to the env-service tunnel, e.g. https://u765343-ac1f-eed61445.westc.seetacloud.com:8443}
@@ -65,7 +69,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.6 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     actor_rollout_ref.rollout.enforce_eager=False \
-    actor_rollout_ref.rollout.free_cache_engine=True \
+    actor_rollout_ref.rollout.free_cache_engine=False \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.4 \
     actor_rollout_ref.rollout.val_kwargs.do_sample=True \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=16 \
@@ -73,6 +77,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.use_invalid_action_penalty=True \
     actor_rollout_ref.actor.invalid_action_penalty_coef=0.1 \
     algorithm.use_kl_in_reward=False \
+    ray_init.num_cpus=32 \
     env.env_name=Webshop \
     env.webshop.server_url=$WEBSHOP_URL \
     env.webshop.require_think_tags=False \
