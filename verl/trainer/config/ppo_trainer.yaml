@@ -368,3 +368,4 @@ env:
     human_goals: False
     server_url: null   # e.g. https://<tunnel-host>:8443 — set to use the remote env service instead of local Ray workers
     server_token: psgrpo
+    require_think_tags: True   # set False for Qwen3 + enable_thinking=False (empty <think> pre-injected, response never contains tags)

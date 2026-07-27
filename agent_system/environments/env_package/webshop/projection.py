@@ -16,12 +16,14 @@
 from typing import List
 import re
 
-def webshop_projection(actions: List[str]):
+def webshop_projection(actions: List[str], require_think: bool = True):
     """
     A function to process the actions.
     actions: the list of actions to be processed, it is a list of strings.
     Expected format:
         <think>some reasoning...</think><action>up/down/left/right/still</action>
+    require_think: Qwen3 + enable_thinking=False 会在 prompt 侧预注入空 <think> 块,
+        response 永远不含 think 标签 —— 该场景必须置 False, 否则 valid 恒为 0。
     """
 
     valids = [0] * len(actions)
@@ -52,10 +54,11 @@ def webshop_projection(actions: List[str]):
             actions[i] = actions[i][-20:]
 
         # check <think>...</think>
-        think_start_idx = original_str.find("<think>")
-        think_end_idx = original_str.find("</think>")
-        if think_start_idx == -1 or think_end_idx == -1:
-            valids[i] = 0
+        if require_think:
+            think_start_idx = original_str.find("<think>")
+            think_end_idx = original_str.find("</think>")
+            if think_start_idx == -1 or think_end_idx == -1:
+                valids[i] = 0
 
         # check if contains any Chinese characters
         if re.search(r'[\u4e00-\u9fff]', original_str):
