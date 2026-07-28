@@ -108,3 +108,42 @@ class TestGoldRoundTripInvariant:
         obs = "You are in room 1. The room is empty."
         assert self._roundtrip(extractor, obs, {'won': False},
                                vocab=HRG_OBJECT_VOCAB) == pytest.approx(1.0)
+
+
+class TestMaskedGoldRoundTrip:
+    """HG01/HG02 (HRG aux-CE 对) 关键不变式: C-sweep 掩码视图下拼的 gold,
+    反解后在同一掩码提取器上 compute_reward 恒为 1.0 —— 监督目标与
+    (被 coverage_level 裁剪过的) 验证目标严格同源。"""
+
+    CSWEEP_WEIGHTS = {
+        'location_change': 0.3, 'device_state': 0.7,
+        'objects_visible': 0.0, 'visible_objects': 0.0, 'task_progress': 0.0,
+    }
+
+    def _masked(self, mask):
+        from agent_system.environments.env_package.hiddenrule.features import PhiMaskedExtractor
+        base = create_hiddenrule_schema_extractor(feature_weights=self.CSWEEP_WEIGHTS)
+        return PhiMaskedExtractor(base, mask)
+
+    def test_room_and_partial_devices(self):
+        masked = self._masked(['room', 'device:lever_a'])
+        actual = masked.extract_all(HRG_OBS, [], {'won': False})
+        gold = gold_predict_string(actual, include_device_states=True)
+        assert 'next_location: room 3' in gold
+        # mask 外设备不进 device_states 段 (visible_objects 探针字段权重 0、不受 mask 管辖,
+        # 可含设备名 —— 与 ALFWorld S6 gold 同设计)
+        dev_segment = [p for p in gold.split(';') if 'device_states' in p][0]
+        assert 'lever_a=up' in dev_segment and 'dial_b' not in dev_segment
+        parsed = parse_predict_block(f'<predict>{gold}</predict>',
+                                     object_vocab=HRG_OBJECT_VOCAB)
+        assert masked.compute_reward(prediction_to_features(parsed), actual) == 1.0
+
+    def test_devices_only_mask_drops_room(self):
+        masked = self._masked(['device:dial_b'])
+        actual = masked.extract_all(HRG_OBS, [], {'won': False})
+        assert 'location_change' not in actual
+        gold = gold_predict_string(actual, include_device_states=True)
+        assert 'next_location' not in gold and 'dial_b=2' in gold
+        parsed = parse_predict_block(f'<predict>{gold}</predict>',
+                                     object_vocab=HRG_OBJECT_VOCAB)
+        assert masked.compute_reward(prediction_to_features(parsed), actual) == 1.0
