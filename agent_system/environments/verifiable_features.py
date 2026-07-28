@@ -666,6 +666,30 @@ def parse_predict_block(text: str, object_vocab: Optional[Set[str]] = None) -> O
                 parsed['vault_openable'] = True
             elif value in _NO_VALUES:
                 parsed['vault_openable'] = False
+        elif key == 'page_type':
+            # WebShop Φ: search/results/item/item_sub (容错常见变体词形)
+            norm = value.replace(' ', '_').replace('-', '_')
+            aliases = {'search_page': 'search', 'search_bar': 'search',
+                       'search_results': 'results', 'result': 'results', 'results_page': 'results',
+                       'item_page': 'item', 'product': 'item', 'product_page': 'item',
+                       'sub_page': 'item_sub', 'description': 'item_sub', 'features': 'item_sub',
+                       'reviews': 'item_sub', 'item_sub_page': 'item_sub'}
+            norm = aliases.get(norm, norm)
+            if norm in WEBSHOP_PAGE_TYPES:
+                parsed['page_type'] = norm
+        elif key == 'results_bin':
+            norm = value.replace(' ', '').replace('~', '-').replace('to', '-')
+            if norm in _NONE_VALUES:
+                norm = 'na'
+            if norm in ('>50', '50+', '51+', 'more-han50'):
+                norm = '50+'
+            if norm in WEBSHOP_RESULT_BINS:
+                parsed['results_bin'] = norm
+        elif key == 'buy_now_visible':
+            if value in _YES_VALUES:
+                parsed['buy_now_visible'] = True
+            elif value in _NO_VALUES:
+                parsed['buy_now_visible'] = False
         elif key == 'device_states':
             # C-sweep (HRG): "lever_a=up, dial_b=2" / "none"。
             # 状态归一到观测渲染词形: 纯数字 d → "set to d" (dial 渲染格式)
@@ -715,6 +739,18 @@ def prediction_to_features(parsed: Dict[str, Any]) -> Dict[str, VerifiableFeatur
     if 'device_states' in parsed:
         features['device_state'] = VerifiableFeature(
             feature_type='device_state', value={'pairs': parsed['device_states']}
+        )
+    if 'page_type' in parsed:
+        features['page_type'] = VerifiableFeature(
+            feature_type='page_type', value=parsed['page_type']
+        )
+    if 'results_bin' in parsed:
+        features['results_bin'] = VerifiableFeature(
+            feature_type='results_bin', value=parsed['results_bin']
+        )
+    if 'buy_now_visible' in parsed:
+        features['buy_now_visible'] = VerifiableFeature(
+            feature_type='buy_now_visible', value={'visible': parsed['buy_now_visible']}
         )
     if 'vault_openable' in parsed:
         features['vault_openable'] = VerifiableFeature(
@@ -819,6 +855,14 @@ def gold_predict_string(actual_features: Dict[str, VerifiableFeature],
     if 'task_progress' in actual_features:
         won = actual_features['task_progress'].value.get('won', False)
         parts.append(f"task_done: {'yes' if won else 'no'}")
+    # WebShop Φ 字段 (与 ALFWorld 字段环境互斥, 顺序与 _WEBSHOP_PREDICT_INSTRUCTION 一致)
+    if 'page_type' in actual_features:
+        parts.append(f"page_type: {actual_features['page_type'].value}")
+    if 'results_bin' in actual_features:
+        parts.append(f"results_bin: {actual_features['results_bin'].value}")
+    if 'buy_now_visible' in actual_features:
+        visible = actual_features['buy_now_visible'].value.get('visible', False)
+        parts.append(f"buy_now_visible: {'yes' if visible else 'no'}")
     return '; '.join(parts)
 
 
@@ -895,4 +939,109 @@ def create_alfworld_feature_extractor(
         (ALFWorldTaskProgressFeature(), feature_weights.get('task_progress', 0.0)),
     ]
 
+    return CompositeFeatureExtractor(extractors)
+
+
+# --------------------------------------------------------------------------- #
+# WebShop Φ (W 系泛化, experiment_plan W02/W04/W05/W06)                        #
+# --------------------------------------------------------------------------- #
+# 设计哲学与 ALFWorld schema 协议一致: 任务无关、规则可验、开集不奖。
+# 三个特征全部从"下一观测 + available_actions"确定性提取:
+#   page_type      (权重 0.5) — 下一页面的结构类型 (search/results/item/item_sub)
+#   results_bin    (权重 0.5) — 下一页 'Total results: N' 的分箱 (na/0/1-10/11-50/50+)
+#   buy_now_visible(权重 0.0) — 下一页是否可直接购买 (page_type 的衍生量, 仅日志探针)
+
+WEBSHOP_PAGE_TYPES = ('search', 'results', 'item', 'item_sub')
+WEBSHOP_RESULT_BINS = ('na', '0', '1-10', '11-50', '50+')
+
+_WEBSHOP_TOTAL_RESULTS_RE = re.compile(r'total results:\s*([\d,]+)', re.IGNORECASE)
+
+
+def _webshop_clickables(info: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    avail = (info or {}).get('available_actions') or {}
+    has_search = bool(avail.get('has_search_bar', False))
+    clickables = [str(c).lower() for c in (avail.get('clickables') or [])]
+    return has_search, clickables
+
+
+def webshop_page_type(observation: str, info: Dict[str, Any]) -> str:
+    """从 available_actions 结构判定页面类型 (与 WebAgentTextEnv 渲染约定对齐)。
+
+    优先级: 搜索框在场 → search; 'buy now' 可点 → item;
+    '< prev' 可点而无 'buy now' → item_sub (description/features/reviews);
+    其余 → results (搜索结果/翻页)。
+    """
+    has_search, clickables = _webshop_clickables(info)
+    if has_search:
+        return 'search'
+    if 'buy now' in clickables:
+        return 'item'
+    if '< prev' in clickables:
+        return 'item_sub'
+    return 'results'
+
+
+def webshop_results_bin(observation: str) -> str:
+    match = _WEBSHOP_TOTAL_RESULTS_RE.search(observation or '')
+    if match is None:
+        return 'na'
+    n = int(match.group(1).replace(',', ''))
+    if n == 0:
+        return '0'
+    if n <= 10:
+        return '1-10'
+    if n <= 50:
+        return '11-50'
+    return '50+'
+
+
+class WebshopPageTypeFeature(BaseFeatureExtractor):
+    feature_type = 'page_type'
+
+    def extract(self, observation, admissible_actions, info):
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value=webshop_page_type(observation, info))
+
+    def verify(self, predicted, actual):
+        return predicted.value == actual.value
+
+
+class WebshopResultsBinFeature(BaseFeatureExtractor):
+    feature_type = 'results_bin'
+
+    def extract(self, observation, admissible_actions, info):
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value=webshop_results_bin(observation))
+
+    def verify(self, predicted, actual):
+        return predicted.value == actual.value
+
+
+class WebshopBuyNowFeature(BaseFeatureExtractor):
+    feature_type = 'buy_now_visible'
+
+    def extract(self, observation, admissible_actions, info):
+        _, clickables = _webshop_clickables(info)
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'visible': 'buy now' in clickables})
+
+    def verify(self, predicted, actual):
+        return bool(predicted.value.get('visible')) == bool(actual.value.get('visible'))
+
+
+def create_webshop_feature_extractor(
+    feature_weights: Dict[str, float] = None
+) -> CompositeFeatureExtractor:
+    """WebShop 组合提取器 (schema 级、任务无关, 全任务共享一个 Φ)。"""
+    if feature_weights is None:
+        feature_weights = {
+            'page_type': 0.5,
+            'results_bin': 0.5,
+            'buy_now_visible': 0.0,  # page_type 衍生, 仅日志探针
+        }
+    extractors = [
+        (WebshopPageTypeFeature(), feature_weights.get('page_type', 0.5)),
+        (WebshopResultsBinFeature(), feature_weights.get('results_bin', 0.5)),
+        (WebshopBuyNowFeature(), feature_weights.get('buy_now_visible', 0.0)),
+    ]
     return CompositeFeatureExtractor(extractors)

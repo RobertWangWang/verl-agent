@@ -25,6 +25,7 @@ from agent_system.environments.prompts import *
 from agent_system.environments.verifiable_features import (
     create_alfworld_feature_extractor,
     create_alfworld_schema_extractor,
+    create_webshop_feature_extractor,
     gold_predict_string,
     parse_predict_block,
     parse_recall_block,
@@ -558,23 +559,47 @@ class GymCardEnvironmentManager(EnvironmentManagerBase):
 
 class WebshopEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, config):
-        self.memory = SimpleMemory()
+        # W 系 PS 臂 (experiment_plan W02/W04): 与 AlfWorld 同构的预测充分性管线,
+        # Φ_webshop = create_webshop_feature_extractor (schema 级, 任务无关)
+        webshop_cfg = config.env.get('webshop', None)
+        pred_cfg = webshop_cfg.get('prediction', None) if webshop_cfg is not None else None
+        self.pred_enabled = bool(pred_cfg is not None and pred_cfg.get('enable', False))
+        if self.pred_enabled:
+            self.pred_feature_weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
+                if pred_cfg.get('feature_weights', None) is not None else None
+            self.collect_gold = bool(pred_cfg.get('collect_gold', False))
+            self.memory = HybridMemory(
+                history_length=config.env.history_length,
+                prediction_horizon=pred_cfg.get('horizon', 1),
+                lambda_pred=1.0,
+                reward_mode=pred_cfg.get('reward_mode', 'potential'),
+            )
+        else:
+            self.memory = SimpleMemory()
         super().__init__(envs, projection_f, config)
-    
+
     def reset(self, kwargs) -> Dict[str, Any]:
         obs, infos = self.envs.reset()
         self.tasks = self.extract_task(obs)
         obs = self.format_obs(obs)
         # infos = [None] * self.envs.num_envs
-        observations = {'text': self.build_text_obs(obs, infos, init=True), 
-                        'image': None, 
+        observations = {'text': self.build_text_obs(obs, infos, init=True),
+                        'image': None,
                         'anchor': obs.copy()
                         }
         self.pre_text_obs = obs
         self.memory.reset(batch_size = len(infos))
+        if self.pred_enabled:
+            self._turn = 0
+            shared = create_webshop_feature_extractor(feature_weights=self.pred_feature_weights)
+            self.feature_extractors = [shared] * len(obs)
         return observations, infos
 
     def step(self, text_actions: List[str]):
+        if self.pred_enabled:
+            # projection 之前 text_actions 是完整 response, 先解析 <predict> 块
+            parsed_predictions = [parse_predict_block(t) for t in text_actions]
+
         actions, valids = self.projection_f(text_actions)
         next_obs, rewards, dones, infos = self.envs.step(actions)
 
@@ -591,6 +616,34 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
         # add action_valid to infos
         for i, info in enumerate(infos):
             info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.pred_enabled:
+            # k=1: 同一次 step 内用 o_{t+1} 闭环验证 (与 AlfWorld 管线同构)
+            for i in range(len(next_obs)):
+                avail = self.format_avail_actions(infos[i]['available_actions'])
+                parsed = parsed_predictions[i]
+                if parsed is not None:
+                    self.memory.record_prediction(i, self._turn, prediction_to_features(parsed))
+                    accuracy, _ = self.memory.verify_prediction(
+                        env_idx=i,
+                        turn=self._turn,
+                        feature_extractor=self.feature_extractors[i],
+                        actual_obs=next_obs[i],
+                        actual_actions=avail,
+                        actual_info=infos[i],
+                    )
+                else:
+                    accuracy = 0.0  # 解析失败按 0 记, 比率单独出 pred_parse_valid 指标
+                pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
+                infos[i]['pred_accuracy'] = accuracy
+                infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_parse_valid'] = parsed is not None
+                if self.collect_gold:
+                    # S6/W05: 与验证器同一套 extractors 拼事后正确 predict 串
+                    actual_feats = self.feature_extractors[i].extract_all(
+                        next_obs[i], avail, infos[i])
+                    infos[i]['gold_predict'] = gold_predict_string(actual_feats)
+            self._turn += 1
 
         rewards = to_numpy(rewards)
         dones = to_numpy(dones)
@@ -651,14 +704,18 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
             available_actions = self.format_avail_actions(infos[i]['available_actions'])
             reformatted_available_actions = "\n".join(f"'{s}'," for s in available_actions)
 
+            # PS 臂用带 <predict> 块指令的模板 (Φ_webshop)
+            template_no_his = WEBSHOP_TEMPLATE_NO_HIS_PS if getattr(self, 'pred_enabled', False) else WEBSHOP_TEMPLATE_NO_HIS
+            template = WEBSHOP_TEMPLATE_PS if getattr(self, 'pred_enabled', False) else WEBSHOP_TEMPLATE
+
             if init or self.config.env.history_length <= 0:
-                obs = WEBSHOP_TEMPLATE_NO_HIS.format(
+                obs = template_no_his.format(
                     task_description=self.tasks[i],
                     current_observation=text_obs[i],
                     available_actions=reformatted_available_actions
                 )
             else:
-                obs = WEBSHOP_TEMPLATE.format(
+                obs = template.format(
                     task_description=self.tasks[i],
                     step_count=len(self.memory[i]),
                     history_length=valid_lens[i],
@@ -669,7 +726,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                 )
                 if len(obs) > 13000:
                     print(f"Warning len(obs)={len(obs)} is too long")
-                    obs = WEBSHOP_TEMPLATE_NO_HIS.format(
+                    obs = template_no_his.format(
                         task_description=self.tasks[i],
                         current_observation=text_obs[i],
                         available_actions=reformatted_available_actions

@@ -369,3 +369,9 @@ env:
     server_url: null   # e.g. https://<tunnel-host>:8443 — set to use the remote env service instead of local Ray workers
     server_token: psgrpo
     require_think_tags: True   # set False for Qwen3 + enable_thinking=False (empty <think> pre-injected, response never contains tags)
+    prediction:
+      enable: False          # W02/W04: <predict> block + rule-verified pred_reward (Φ_webshop)
+      horizon: 1
+      reward_mode: potential # potential | direct
+      collect_gold: False    # W05/W06: emit gold_predict for the aux-CE (S6) channel
+      feature_weights: null  # default {page_type .5, results_bin .5, buy_now_visible 0}
