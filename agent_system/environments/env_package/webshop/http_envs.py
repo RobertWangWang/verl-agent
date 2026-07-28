@@ -30,8 +30,11 @@ import numpy as np
 import requests
 
 REQUEST_TIMEOUT_S = 300
-RETRIES = 3
+# 重试窗必须盖过跨云隧道的断链重连窗 (实测 keepalive 检测 ~20s + doctor 自愈 ~2min):
+# 12 次 × 退避 cap 15s ≈ 2.5min 总容忍。W01 曾死于 3 次/6s 窗口撞上隧道重连 (2026-07-28)。
+RETRIES = 12
 RETRY_BACKOFF_S = 2.0
+RETRY_BACKOFF_CAP_S = 15.0
 
 
 class _HTTPSession:
@@ -62,7 +65,7 @@ class _HTTPSession:
             except Exception as e:  # noqa: BLE001 — 网络抖动统一重试
                 last_err = e
                 import time
-                time.sleep(RETRY_BACKOFF_S * (attempt + 1))
+                time.sleep(min(RETRY_BACKOFF_S * (attempt + 1), RETRY_BACKOFF_CAP_S))
         raise RuntimeError(f'webshop server call {path} failed after {RETRIES} tries: '
                            f'{last_err}; body={last_body}; payload={str(payload)[:300]}')
 

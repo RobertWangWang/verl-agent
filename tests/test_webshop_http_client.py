@@ -6,7 +6,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+import agent_system.environments.env_package.webshop.http_envs as http_envs_mod
 from agent_system.environments.env_package.webshop.http_envs import build_webshop_http_envs
+
+
+@pytest.fixture(autouse=True)
+def fast_retries(monkeypatch):
+    """生产重试窗 12×~2.5min 为隧道重连设计; 测试降为 2×0.05s 保持秒级."""
+    monkeypatch.setattr(http_envs_mod, 'RETRIES', 2)
+    monkeypatch.setattr(http_envs_mod, 'RETRY_BACKOFF_S', 0.05)
 
 TOKEN = 'testtok'
 N_GOALS = 620
