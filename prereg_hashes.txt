@@ -7,3 +7,4 @@
 R46ab_prediction_2026-07-25: 6a881f32e8c02533aa876034296a78a1ffd6c9cd544d64b0d514af5acc78cf26
 R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0afb63ee47ae7e
 2026-07-27 W01-W04 webshop dual-mode generalization prereg sha256: a0660a3f06b30de1601a59e0eb5af16aaf25a76ff42f80563e77cc96a509dad6
+2026-07-28 HG01-HG02 HRG loss-channel content-effect pair prereg sha256: 8da439b4ea99080e2eaa40ecd48f62f154dc3b05a7afb913be19c87ab736e1bf
