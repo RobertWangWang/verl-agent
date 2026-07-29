@@ -11,3 +11,4 @@ R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0af
 2026-07-28 R42b-R42c 8B aux-collapse replication+attribution prereg sha256: 1764d2ef89878cf316b66ac6bd00afb5497eb9bc9f9280ec7be1ecb67115260a
 2026-07-28 R42e 8B prompt-only control prereg sha256: 2352a73f310c06618de8be886c01f46cb0b31b52de376782b0aad59339d5f6dc
 2026-07-28 R42d 8B aux dose beta=0.05 prereg sha256: b4624e157b4345c6b23a58a5a4bcf9ea7541f3426e42fda8bf835913219f8e56
+2026-07-29 W05-W06 webshop aux-pair prereg sha256: f52be9833e6d0ea88a1effede2fc72ac9ed8f909bae0b3d0b51b3cff864a994f
