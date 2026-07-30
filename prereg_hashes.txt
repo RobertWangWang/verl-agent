@@ -14,3 +14,6 @@ R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0af
 2026-07-29 W05-W06 webshop aux-pair prereg sha256: f52be9833e6d0ea88a1effede2fc72ac9ed8f909bae0b3d0b51b3cff864a994f
 2026-07-29 W07 webshop mean-only rescue prereg sha256: 75c9a16453d7cee5f962c1ab0be847f209c3813396ed164150724fcf81b45028
 2026-07-29 W05-s42 webshop aux seed-2 prereg sha256: a45e4d73575299a6f6b2a5f14cb27c5871b7aaa627f7d7e2a6c1e4b7eda85008
+2026-07-30 P50 ppo-gae control prereg sha256: 0b8021dcbbebabe3521b65e16dfb346470dafbd5ea0586dc0e661be26e07f691
+2026-07-30 R42f third gold seed prereg sha256: 2853e218940e52aab044537edf9bd744342ffa471ef95f140e9db4c17ace9d48
+2026-07-30 decoupled-s42/deltaclip-s42 pair prereg sha256: d3fa868333b66cba1b8f21490ddb4bfc75dda732b572fcaf1e56bcb137ae4bfd
