@@ -17,3 +17,5 @@ R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0af
 2026-07-30 P50 ppo-gae control prereg sha256: 0b8021dcbbebabe3521b65e16dfb346470dafbd5ea0586dc0e661be26e07f691
 2026-07-30 R42f third gold seed prereg sha256: 2853e218940e52aab044537edf9bd744342ffa471ef95f140e9db4c17ace9d48
 2026-07-30 decoupled-s42/deltaclip-s42 pair prereg sha256: d3fa868333b66cba1b8f21490ddb4bfc75dda732b572fcaf1e56bcb137ae4bfd
+2026-07-30 R36b fast-anneal prereg sha256: 4745d71087150e9d2a745a39b9291ee99313fd2d5ed6ceef84bf65696a70b4e7
+2026-07-30 GiGPO grouping-control prereg sha256: d8e687dfaa770d3505dfc99e8d17498cd12d56dcc5d7336cfd89aad434e927a0
