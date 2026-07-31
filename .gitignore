@@ -143,8 +143,16 @@ docs/ps_grpo_integration_design.md
 docs/8gpu_compute_justification*.md
 docs/grpo_baseline_guide.md
 draft_*.md
+cite.md
 peer-review-*.docx
 summary_*.md
 summary_*.pdf
 research_plot/
 logs/
+papers/
+full_review_*.md
+模拟审稿意见*
+queue_hrg_aux_pair.sh
+Evaluated_plan.md
+experiment_plan.pdf
+proposal_cheap_regularization*.pdf
