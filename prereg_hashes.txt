@@ -19,3 +19,4 @@ R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0af
 2026-07-30 decoupled-s42/deltaclip-s42 pair prereg sha256: d3fa868333b66cba1b8f21490ddb4bfc75dda732b572fcaf1e56bcb137ae4bfd
 2026-07-30 R36b fast-anneal prereg sha256: 4745d71087150e9d2a745a39b9291ee99313fd2d5ed6ceef84bf65696a70b4e7
 2026-07-30 GiGPO grouping-control prereg sha256: d8e687dfaa770d3505dfc99e8d17498cd12d56dcc5d7336cfd89aad434e927a0
+2026-07-31 review-r2 batch (3 placebo seeds + noise/halfgold falsifiers) prereg sha256: 1aa18db41eef2ceb782c193137a3cede28bde7f6a9f3eab4f93d28e7cbd99096
