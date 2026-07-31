@@ -1467,6 +1467,7 @@ class RayPPOTrainer:
                                     seed=self.global_steps,
                                     placebo_shuffle=bool(aux_cfg.get("placebo_shuffle", False)),
                                     placebo_mode=aux_cfg.get("placebo_mode", None),
+                                    half_gold_p=float(aux_cfg.get("half_gold_p", 0.5)),
                                 )
                                 if aux_batch is not None:
                                     n_aux = len(aux_batch)
@@ -1480,6 +1481,8 @@ class RayPPOTrainer:
                                         aux_batch,
                                         beta=float(aux_cfg.get("beta", 0.1)),
                                         use_kl_loss=self.config.actor_rollout_ref.actor.use_kl_loss,
+                                        noise_sign=bool(aux_cfg.get("noise_sign", False)),
+                                        noise_seed=self.global_steps,
                                     )
                                     aux_batch.meta_info["multi_turn"] = \
                                         self.config.actor_rollout_ref.rollout.multi_turn.enable

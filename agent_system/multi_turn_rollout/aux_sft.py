@@ -51,7 +51,26 @@ _PLACEBO_OBJECTS = [
     'barometer', 'tuning fork', 'kaleidoscope', 'sundial', 'harmonica', 'compass rose',
 ]
 
-PLACEBO_MODES = (None, 'shuffle', 'random_vocab', 'random_tokens')
+PLACEBO_MODES = (None, 'shuffle', 'random_vocab', 'random_tokens', 'half_gold')
+
+
+def _corrupt_token_ids(ids: list, rng: np.random.RandomState, p: float,
+                       vocab_size: int, special_ids: frozenset) -> list:
+    """R60b 内容半衰: 每 token 以概率 p 独立替换为词表均匀随机 token
+    (排除 special token, 重采样至多 8 次后放弃该位)。"""
+    out = []
+    for t in ids:
+        if rng.rand() >= p:
+            out.append(t)
+            continue
+        for _ in range(8):
+            cand = int(rng.randint(0, vocab_size))
+            if cand not in special_ids:
+                out.append(cand)
+                break
+        else:
+            out.append(t)
+    return out
 
 
 def _random_tokens_gold(rng: np.random.RandomState) -> str:
@@ -81,7 +100,8 @@ def _random_vocab_gold(rng: np.random.RandomState) -> str:
 
 def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
                         seed: int = 0, placebo_shuffle: bool = False,
-                        placebo_mode: str = None) -> Optional[DataProto]:
+                        placebo_mode: str = None,
+                        half_gold_p: float = 0.5) -> Optional[DataProto]:
     """
     从训练 batch 构造辅助 SFT 批。
 
@@ -143,6 +163,16 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
         tok_rng = np.random.RandomState(seed + 1299709)
         gold_map = {i: _random_tokens_gold(tok_rng) for i in candidates}
 
+    # R60b (half_gold): gold 内容 token 级半衰 —— <predict> 包裹标签不动,
+    # 内部 token 以 p 独立换为词表均匀随机 token; seed=global_steps → 每步新鲜采样。
+    corrupt_rng = None
+    if placebo_mode == 'half_gold':
+        corrupt_rng = np.random.RandomState(seed + 15485863)
+        _vocab_size = getattr(tokenizer, 'vocab_size', None) or len(tokenizer)
+        _special_ids = frozenset(getattr(tokenizer, 'all_special_ids', None)
+                                 or [i for i in (tokenizer.pad_token_id,
+                                                 tokenizer.eos_token_id) if i is not None])
+
     idx = torch.as_tensor(candidates, dtype=torch.long)
     new_responses = torch.full((len(candidates), resp_len), pad_id, dtype=responses.dtype)
     aux_token_mask = torch.zeros((len(candidates), resp_len), dtype=torch.float32)
@@ -156,7 +186,15 @@ def build_aux_sft_batch(batch: DataProto, tokenizer, fraction: float = 1.0,
         # 逐段 tokenize 拼接 → gold 段 token 区间精确已知 (边界合并差异可接受,
         # 强制目标即定义本身)
         prefix_ids = tokenizer.encode(prefix, add_special_tokens=False)
-        gold_ids = tokenizer.encode(gold_block, add_special_tokens=False)
+        if corrupt_rng is not None:
+            open_ids = tokenizer.encode('<predict>', add_special_tokens=False)
+            core_ids = tokenizer.encode(gold_map[i], add_special_tokens=False)
+            close_ids = tokenizer.encode('</predict>', add_special_tokens=False)
+            core_ids = _corrupt_token_ids(core_ids, corrupt_rng, half_gold_p,
+                                          _vocab_size, _special_ids)
+            gold_ids = open_ids + core_ids + close_ids
+        else:
+            gold_ids = tokenizer.encode(gold_block, add_special_tokens=False)
         suffix_ids = tokenizer.encode(suffix, add_special_tokens=False)
         if tokenizer.eos_token_id is not None:
             suffix_ids = suffix_ids + [tokenizer.eos_token_id]
@@ -203,14 +241,28 @@ def compute_interference_metrics(logp_pre: torch.Tensor, logp_post: torch.Tensor
     }
 
 
-def apply_aux_sft_supervision(aux: DataProto, beta: float, use_kl_loss: bool) -> DataProto:
+def apply_aux_sft_supervision(aux: DataProto, beta: float, use_kl_loss: bool,
+                              noise_sign: bool = False,
+                              noise_seed: int = 0) -> DataProto:
     """
     compute_log_prob(aux) 之后调用: 把监督信号写成 PPO 语义。
     - advantages = β · aux_token_mask (强制 token 上的加权 CE, §8.2 第 3 条);
     - returns 同 advantages (dp_actor 不用,占位保持键完整);
     - use_kl_loss 时 ref_log_prob := old_log_probs (KL 梯度在强制 token 上归零)。
+
+    noise_sign (R60a 梯度噪声证伪臂, prereg 2026-07-31): 常数优势 β 改为每 token
+    独立 Rademacher 随机符号 ±β (noise_seed=global_steps → 每步新鲜采样)。
+    梯度期望为零、幅度/结构/token 集合与 aux 臂逐项匹配 = 纯梯度噪声、无一致目标。
+    判据: 落基线带 → "梯度噪声正则"被证伪; ≥ gold−5 → 增益即 generic 噪声正则。
     """
-    adv = beta * aux.batch['aux_token_mask']
+    mask = aux.batch['aux_token_mask']
+    if noise_sign:
+        gen = torch.Generator(device='cpu').manual_seed(int(noise_seed) + 32452843)
+        sign = torch.randint(0, 2, mask.shape, generator=gen,
+                             dtype=torch.int64).float() * 2.0 - 1.0
+        adv = beta * mask * sign.to(mask.device)
+    else:
+        adv = beta * mask
     aux.batch['advantages'] = adv
     aux.batch['returns'] = adv.clone()
     if use_kl_loss and 'old_log_probs' in aux.batch.keys():
