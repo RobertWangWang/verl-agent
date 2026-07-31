@@ -1252,7 +1252,7 @@ def make_envs(config):
             mode = 'small' if config.env.webshop.use_small else 'all'
             token = config.env.webshop.get('server_token', 'psgrpo')
             _envs = build_webshop_http_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, server_url=server_url, token=token, mode=mode, is_train=True)
-            _val_envs = build_webshop_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, mode=mode, is_train=False)
+            _val_envs = build_webshop_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, mode=mode, is_train=False, val_goal_limit=config.env.webshop.get('val_goal_limit', None))
             projection_f = partial(webshop_projection, require_think=config.env.webshop.get('require_think_tags', True))
             envs = WebshopEnvironmentManager(_envs, projection_f, config)
             val_envs = WebshopEnvironmentManager(_val_envs, projection_f, config)

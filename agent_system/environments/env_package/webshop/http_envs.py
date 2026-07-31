@@ -111,6 +111,7 @@ class WebshopHTTPEnv:
         token: str = 'psgrpo',
         mode: str = 'small',
         is_train: bool = True,
+        val_goal_limit: int = None,
     ) -> None:
         super().__init__()
         self.group_n = group_n
@@ -135,7 +136,9 @@ class WebshopHTTPEnv:
 
         # 目标划分语义与 Ray 版逐行一致
         if not self.is_train:
-            self.goal_idxs = range(500)
+            # val_goal_limit=N: 评测轮确定性用测试段前 N 个 goal (E01 §五-d; env_num=N 时
+            # 不放回抽样即恰好每 goal 一局, 仅顺序被 seed 置换)
+            self.goal_idxs = range(500) if val_goal_limit is None else range(int(val_goal_limit))
         else:
             self.goal_idxs = range(500, n_goals)
         print(f'[webshop-http] mode={mode} goals={n_goals} idxs={self.goal_idxs}')
@@ -184,6 +187,7 @@ def build_webshop_http_envs(
     token: str = 'psgrpo',
     mode: str = 'small',
     is_train: bool = True,
+    val_goal_limit: int = None,
 ):
     return WebshopHTTPEnv(
         seed=seed,
@@ -193,4 +197,5 @@ def build_webshop_http_envs(
         token=token,
         mode=mode,
         is_train=is_train,
+        val_goal_limit=val_goal_limit,
     )
