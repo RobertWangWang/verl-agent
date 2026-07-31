@@ -21,3 +21,4 @@ R39_prediction_2026-07-26: d09c969619f997a019ebbe4e0e808084b7c9bce65c6ebcbb0c0af
 2026-07-30 GiGPO grouping-control prereg sha256: d8e687dfaa770d3505dfc99e8d17498cd12d56dcc5d7336cfd89aad434e927a0
 2026-07-31 review-r2 batch (3 placebo seeds + noise/halfgold falsifiers) prereg sha256: 1aa18db41eef2ceb782c193137a3cede28bde7f6a9f3eab4f93d28e7cbd99096
 2026-07-31 SW01/02 scienceworld pair prereg sha256: 7360c92d7378647e6bef07e7ac59f1d1e46feb96c5a0318cc2a0c0bab6c7bf6e
+2026-08-01 estimator-sweep RLOO/R++ two-arm pairs prereg sha256: 0a28a0769392d128a495de4862c92c41825b10264727e21c2098ff9afc6da89c
