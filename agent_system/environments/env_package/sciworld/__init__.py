@@ -1,4 +1,4 @@
-# Copyright 2025 Nanyang Technological University (NTU), Singapore
+# Copyright 2026 Nanyang Technological University (NTU), Singapore
 # and the verl-agent (GiGPO) team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,11 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .alfworld import *
-from .webshop import *
-from .sciworld import *
-from .sokoban import *
-from .gym_cards import *
-from .appworld import *
-from .search import *
-from .hiddenrule import *
+from .http_envs import SciWorldHTTPEnv, build_sciworld_http_envs
+from .projection import sciworld_projection
+
+__all__ = ['SciWorldHTTPEnv', 'build_sciworld_http_envs', 'sciworld_projection']

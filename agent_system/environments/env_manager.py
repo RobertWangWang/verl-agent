@@ -26,6 +26,8 @@ from agent_system.environments.verifiable_features import (
     create_alfworld_feature_extractor,
     create_alfworld_schema_extractor,
     create_webshop_feature_extractor,
+    create_sciworld_feature_extractor,
+    SCIWORLD_OBJECT_VOCAB,
     gold_predict_string,
     parse_predict_block,
     parse_recall_block,
@@ -747,6 +749,169 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                 success['webshop_task_score (not success_rate)'].append(score_value)
                 return
 
+class SciWorldEnvironmentManager(EnvironmentManagerBase):
+    """ScienceWorld (HTTP 服务路径) — 结构逐段镜像 WebshopEnvironmentManager。
+
+    观测组装: step 原始 obs 简短 ("You move to the kitchen."), 组装为
+    obs + look + inventory (look/inv 由服务端逐步回传)。
+    成功口径: info['won'] (服务端已二值化 score==100), 密集分数走
+    sciworld_task_score 旁路指标 (prereg 2026-07-30 决策)。
+    """
+
+    def __init__(self, envs, projection_f, config):
+        sciworld_cfg = config.env.get('sciworld', None)
+        pred_cfg = sciworld_cfg.get('prediction', None) if sciworld_cfg is not None else None
+        self.pred_enabled = bool(pred_cfg is not None and pred_cfg.get('enable', False))
+        if self.pred_enabled:
+            self.pred_feature_weights = OmegaConf.to_container(pred_cfg.get('feature_weights', None), resolve=True) \
+                if pred_cfg.get('feature_weights', None) is not None else None
+            self.collect_gold = bool(pred_cfg.get('collect_gold', False))
+            self.memory = HybridMemory(
+                history_length=config.env.history_length,
+                prediction_horizon=pred_cfg.get('horizon', 1),
+                lambda_pred=1.0,
+                reward_mode=pred_cfg.get('reward_mode', 'potential'),
+            )
+        else:
+            self.memory = SimpleMemory()
+        super().__init__(envs, projection_f, config)
+
+    @staticmethod
+    def _compose_obs(obs: str, info: Dict[str, Any]) -> str:
+        look = (info or {}).get('look', '') or ''
+        inv = (info or {}).get('inventory', '') or ''
+        parts = []
+        if obs and obs.strip() and obs.strip() not in look:
+            parts.append(obs.strip())
+        parts.append(look.strip())
+        if inv.strip():
+            parts.append(inv.strip())
+        objs = (info or {}).get('possible_objects') or []
+        if objs:
+            parts.append('Objects you can refer to: ' + ', '.join(objs))
+        return '\n'.join(p for p in parts if p)
+
+    def reset(self, kwargs) -> Dict[str, Any]:
+        obs, infos = self.envs.reset()
+        self.tasks = [info.get('task_description', '') for info in infos]
+        obs = [self._compose_obs(obs[i], infos[i]) for i in range(len(obs))]
+        observations = {'text': self.build_text_obs(obs, infos, init=True),
+                        'image': None,
+                        'anchor': obs.copy()}
+        self.pre_text_obs = obs
+        self.memory.reset(batch_size=len(infos))
+        if self.pred_enabled:
+            self._turn = 0
+            shared = create_sciworld_feature_extractor(feature_weights=self.pred_feature_weights)
+            self.feature_extractors = [shared] * len(obs)
+        return observations, infos
+
+    def step(self, text_actions: List[str]):
+        if self.pred_enabled:
+            parsed_predictions = [
+                parse_predict_block(t, object_vocab=SCIWORLD_OBJECT_VOCAB)
+                for t in text_actions]
+
+        actions, valids = self.projection_f(text_actions)
+        raw_next_obs, rewards, dones, infos = self.envs.step(actions)
+
+        next_obs = [self._compose_obs(raw_next_obs[i], infos[i]) for i in range(len(raw_next_obs))]
+
+        self.memory.store({'text_obs': self.pre_text_obs, 'action': actions})
+        self.pre_text_obs = next_obs
+
+        next_observations = {
+            'text': self.build_text_obs(next_obs, infos),
+            'image': None,
+            'anchor': next_obs.copy()
+        }
+        for i, info in enumerate(infos):
+            info['is_action_valid'] = to_numpy(valids[i])
+
+        if self.pred_enabled:
+            # k=1: 同一次 step 内用 o_{t+1} 闭环验证 (与 AlfWorld/WebShop 管线同构)。
+            # location_change 从原始 step obs 抽 ("You move to the X."), 组装文本
+            # 前置了原始 obs, 因此传组装文本即可命中。
+            for i in range(len(next_obs)):
+                avail = infos[i].get('available_actions', [])
+                parsed = parsed_predictions[i]
+                if parsed is not None:
+                    self.memory.record_prediction(i, self._turn, prediction_to_features(parsed))
+                    accuracy, _ = self.memory.verify_prediction(
+                        env_idx=i,
+                        turn=self._turn,
+                        feature_extractor=self.feature_extractors[i],
+                        actual_obs=next_obs[i],
+                        actual_actions=avail,
+                        actual_info=infos[i],
+                    )
+                else:
+                    accuracy = 0.0
+                pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
+                infos[i]['pred_accuracy'] = accuracy
+                infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_parse_valid'] = parsed is not None
+                if self.collect_gold:
+                    actual_feats = self.feature_extractors[i].extract_all(
+                        next_obs[i], avail, infos[i])
+                    infos[i]['gold_predict'] = gold_predict_string(actual_feats)
+            self._turn += 1
+
+        rewards = to_numpy(rewards)
+        dones = to_numpy(dones)
+
+        return next_observations, rewards, dones, infos
+
+    def build_text_obs(self, text_obs: List[str], infos: List[Dict], init: bool = False) -> List[str]:
+        postprocess_text_obs = []
+        if not init and self.config.env.history_length > 0:
+            memory_contexts, valid_lens = self.memory.fetch(
+                self.config.env.history_length,
+                obs_key="text_obs",
+                action_key="action")
+
+        for i in range(len(text_obs)):
+            templates = infos[i].get('available_actions', [])
+            reformatted = "\n".join(f"'{s}'," for s in templates)
+
+            template_no_his = SCIWORLD_TEMPLATE_NO_HIS_PS if getattr(self, 'pred_enabled', False) else SCIWORLD_TEMPLATE_NO_HIS
+            template = SCIWORLD_TEMPLATE_PS if getattr(self, 'pred_enabled', False) else SCIWORLD_TEMPLATE
+
+            if init or self.config.env.history_length <= 0:
+                obs = template_no_his.format(
+                    task_description=self.tasks[i],
+                    current_observation=text_obs[i],
+                    available_actions=reformatted)
+            else:
+                obs = template.format(
+                    task_description=self.tasks[i],
+                    step_count=len(self.memory[i]),
+                    history_length=valid_lens[i],
+                    action_history=memory_contexts[i],
+                    current_step=len(self.memory[i]) + 1,
+                    current_observation=text_obs[i],
+                    available_actions=reformatted)
+                if len(obs) > 13000:
+                    print(f"Warning len(obs)={len(obs)} is too long")
+                    obs = template_no_his.format(
+                        task_description=self.tasks[i],
+                        current_observation=text_obs[i],
+                        available_actions=reformatted)
+
+            postprocess_text_obs.append(obs)
+
+        return postprocess_text_obs
+
+    def _process_batch(self, batch_idx, total_batch_list, total_infos, success):
+        for i in reversed(range(len(total_batch_list[batch_idx]))):
+            batch_item = total_batch_list[batch_idx][i]
+            if batch_item['active_masks']:
+                info = total_infos[batch_idx][i]
+                success['success_rate'].append(float(info['won']))
+                success['sciworld_task_score (not success_rate)'].append(float(info['task_score']))
+                return
+
+
 class AppWorldEnvironmentManager(EnvironmentManagerBase):
     def __init__(self, envs, projection_f, config):
         self.memory = SimpleMemory()
@@ -1063,6 +1228,21 @@ def make_envs(config):
         projection_f = partial(sokoban_projection)
         envs = SokobanEnvironmentManager(_envs, projection_f, config)
         val_envs = SokobanEnvironmentManager(_val_envs, projection_f, config)
+        return envs, val_envs
+    elif "sciworld" in config.env.env_name.lower():
+        from agent_system.environments.env_package.sciworld import build_sciworld_http_envs, sciworld_projection
+        sci_cfg = config.env.sciworld
+        server_url = sci_cfg.server_url
+        if not server_url:
+            raise ValueError("sciworld requires env.sciworld.server_url (centralized JVM host, see env_package/sciworld/server.py)")
+        token = sci_cfg.get('server_token', 'psgrpo')
+        task = sci_cfg.get('task_name', 'boil')
+        simp = sci_cfg.get('simplification_str', '')
+        _envs = build_sciworld_http_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, server_url=server_url, token=token, task=task, simplification=simp, split=sci_cfg.get('train_split', 'train'), is_train=True)
+        _val_envs = build_sciworld_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, task=task, simplification=simp, split=sci_cfg.get('eval_split', 'test'), is_train=False)
+        projection_f = partial(sciworld_projection, require_think=sci_cfg.get('require_think_tags', True))
+        envs = SciWorldEnvironmentManager(_envs, projection_f, config)
+        val_envs = SciWorldEnvironmentManager(_val_envs, projection_f, config)
         return envs, val_envs
     elif "webshop" in config.env.env_name.lower():
         from agent_system.environments.env_package.webshop import build_webshop_envs, build_webshop_http_envs, webshop_projection

@@ -1045,3 +1045,116 @@ def create_webshop_feature_extractor(
         (WebshopBuyNowFeature(), feature_weights.get('buy_now_visible', 0.0)),
     ]
     return CompositeFeatureExtractor(extractors)
+
+
+# ---------------------------------------------------------------------------
+# ScienceWorld Φ (SW01/02): schema 级、任务无关。三特征镜像 ALFWorld v0.2 结构,
+# 复用 location_change / objects_visible / visible_objects 特征名 →
+# parse_predict_block 与 gold_predict_string 零改动直接可用。
+# 观测格式实测 (2026-07-31 E 机 probe):
+#   look: "This room is called the hallway. In it, you see: \n\tthe agent\n\ta
+#          substance called air\n\ta picture\nYou also see:\n\tA door to ..."
+#   移动 step obs: "You move to the kitchen."
+# ---------------------------------------------------------------------------
+
+SCIWORLD_OBJECT_VOCAB = {
+    # 常见基质/物体 (schema 级跨任务词表; visible_objects 为 0 权重日志探针,
+    # 词表作用仅是去噪, 不追求完备)
+    'air', 'water', 'ice', 'steam', 'salt', 'soap', 'sodium', 'chloride',
+    'picture', 'painting', 'table', 'chair', 'desk', 'bed', 'couch', 'shelf',
+    'counter', 'cupboard', 'drawer', 'sink', 'oven', 'stove', 'fridge',
+    'freezer', 'thermometer', 'stopwatch', 'pot', 'pan', 'cup', 'glass',
+    'jar', 'bowl', 'bottle', 'spoon', 'jug', 'shovel', 'axe',
+    'apple', 'orange', 'banana', 'lemon', 'peach', 'seed', 'flower', 'plant',
+    'tree', 'soil', 'dirt', 'pea', 'wood', 'leaf',
+    'animal', 'dog', 'cat', 'bird', 'fish', 'frog', 'butterfly', 'moth',
+    'egg', 'chicken', 'wolf', 'bee', 'ant', 'turtle', 'crocodile',
+    'lighter', 'match', 'candle', 'lamp', 'wire', 'battery', 'bulb', 'switch',
+    'motor', 'buzzer', 'solar', 'panel', 'generator', 'peg', 'fork',
+    'door', 'drain', 'bathtub', 'toilet', 'agent', 'book', 'paper', 'paint',
+    'red', 'blue', 'yellow', 'metal', 'pole', 'magnet', 'inclined', 'plane',
+}
+
+_SW_ROOM_RE = re.compile(r'this room is called the ([a-z ]+?)\.', re.IGNORECASE)
+_SW_MOVE_RE = re.compile(r'you (?:move|go|teleport) to the ([a-z ]+?)\.', re.IGNORECASE)
+
+
+def _sw_visible_objects(look_text: str, vocab: Set[str]) -> Set[str]:
+    """从 look 的 "In it, you see:" 多行列表抽取词表内物体 (排除 agent 元素)。
+    ALFWorld 的 _SEEN_LIST_RE 是单行正则, 对 SW 的 \\n\\t 列表失效 —— 此处按行段解析。"""
+    text = (look_text or '').lower()
+    start = text.find('you see:')
+    if start < 0:
+        return set()
+    segment = text[start + len('you see:'):]
+    stop = segment.find('you also see:')
+    if stop >= 0:
+        segment = segment[:stop]
+    seen: Set[str] = set()
+    for token in re.findall(r'[a-z]+', segment):
+        if token in vocab and token != 'agent':
+            seen.add(token)
+    return seen
+
+
+class SciWorldLocationFeature(BaseFeatureExtractor):
+    """移动特征: step obs 显式宣告移动 ("You move to the kitchen.") 时 value=房间名,
+    否则 None (与 ALFWorld location_change 的 "none = 未移动" 语义一致)。"""
+
+    feature_type = 'location_change'
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        m = _SW_MOVE_RE.search(observation or '')
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value=m.group(1).strip() if m else None)
+
+    def verify(self, predicted: VerifiableFeature, actual: VerifiableFeature) -> bool:
+        if predicted.feature_type != self.feature_type or actual.feature_type != self.feature_type:
+            raise ValueError("Feature type mismatch")
+        pred = (predicted.value or '').strip().lower() if predicted.value else None
+        act = (actual.value or '').strip().lower() if actual.value else None
+        return pred == act
+
+
+class SciWorldObjectsVisibleFeature(ALFWorldObjectsVisibleFeature):
+    """布尔特征: 下一观测 (info['look']) 是否列出至少一个非 agent 物体。"""
+
+    def __init__(self, vocab: Set[str] = None):
+        super().__init__(vocab if vocab is not None else SCIWORLD_OBJECT_VOCAB)
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        look = (info or {}).get('look') or observation
+        seen = _sw_visible_objects(look, self.vocab)
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'seen': sorted(seen)})
+
+
+class SciWorldVisibleObjectsF1Feature(ALFWorldVisibleObjectsF1Feature):
+    """开放集 F1 探针 (权重 0, 仅日志), 数据源 info['look']。"""
+
+    def __init__(self, vocab: Set[str] = None):
+        super().__init__(vocab if vocab is not None else SCIWORLD_OBJECT_VOCAB)
+
+    def extract(self, observation: str, admissible_actions: List[str], info: Dict[str, Any]) -> VerifiableFeature:
+        look = (info or {}).get('look') or observation
+        seen = _sw_visible_objects(look, self.vocab)
+        return VerifiableFeature(feature_type=self.feature_type,
+                                 value={'objects': sorted(seen)})
+
+
+def create_sciworld_feature_extractor(
+    feature_weights: Dict[str, float] = None
+) -> CompositeFeatureExtractor:
+    """ScienceWorld 组合提取器 (schema 级、任务无关, 全任务共享一个 Φ)。"""
+    if feature_weights is None:
+        feature_weights = {
+            'location_change': 0.5,
+            'objects_visible': 0.5,
+            'visible_objects': 0.0,  # F1 日志探针 (ALFWorld v0.2 惯例)
+        }
+    extractors = [
+        (SciWorldLocationFeature(), feature_weights.get('location_change', 0.5)),
+        (SciWorldObjectsVisibleFeature(), feature_weights.get('objects_visible', 0.5)),
+        (SciWorldVisibleObjectsF1Feature(), feature_weights.get('visible_objects', 0.0)),
+    ]
+    return CompositeFeatureExtractor(extractors)

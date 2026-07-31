@@ -365,6 +365,20 @@ env:
     num_boxes: 1
     search_depth: 30
     mode: tiny_rgb_array
+  sciworld:
+    server_url: null       # 集中式 JVM 宿主 (env_package/sciworld/server.py, E 机); 必填
+    server_token: psgrpo
+    task_name: boil        # SW01/02 任务名 (get_task_names 之一)
+    simplification_str: '' # 显式简化串 (prereg 决策: 不用 easy 别名, 逐项写明或留空)
+    train_split: train     # ScienceWorld 原生 variation 划分
+    eval_split: test
+    require_think_tags: True   # Qwen3 + enable_thinking=False 场景置 False
+    prediction:
+      enable: False        # SW02: <predict> 块 + 规则验证 pred_reward (Φ_sciworld)
+      horizon: 1
+      reward_mode: potential
+      collect_gold: False  # SW aux 臂: 采集 gold_predict 走 S6 损失通道
+      feature_weights: null # 默认 {location_change .5, objects_visible .5, visible_objects 0}
   webshop:
     use_small: True
     human_goals: False
