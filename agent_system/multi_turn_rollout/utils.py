@@ -120,7 +120,10 @@ def adjust_batch(config, data: DataProto, mode="copy") -> DataProto:
         del data
     elif mode == "copy":
         to_add = size_divisor - remainder
-        dup_indices = np.random.choice(bs, to_add, replace=False)
+        # replace=False crashes when to_add > bs (degenerate policies can shrink
+        # the collected step-sample batch below the padding need; seen on
+        # ScienceWorld 2026-08-04). Fall back to sampling with replacement.
+        dup_indices = np.random.choice(bs, to_add, replace=to_add > bs)
         dup_proto = data.select_idxs(dup_indices)
 
         adjusted_batch = DataProto.concat([data, dup_proto])
