@@ -1370,12 +1370,23 @@ class RayPPOTrainer:
                             group_outcome_metrics, all_fail_uids = compute_group_outcome_metrics(batch)
                             metrics.update(group_outcome_metrics)
 
+                        # group-variance telemetry (2026-09 data request): snapshot the
+                        # pure-task per-sample scores before any injection.
+                        gv_cfg = self.config.trainer.get('group_variance_telemetry', None)
+                        gv_enabled = gv_cfg is not None and gv_cfg.get('enable', False)
+                        if gv_enabled:
+                            from agent_system.telemetry.group_variance_logger import snapshot_scores
+                            gv_snap_task = snapshot_scores(batch)
+
                         # compute rewards. apply_invalid_action_penalty if available
                         if self.config.actor_rollout_ref.actor.get('use_invalid_action_penalty', True):
                             batch, invalid_metrics = apply_invalid_action_penalty(batch,
                                                                                   invalid_action_penalty_coef=self.config.actor_rollout_ref.actor.invalid_action_penalty_coef,
                                                                                   )
                             metrics.update(invalid_metrics)
+
+                        if gv_enabled:
+                            gv_snap_after_penalty = snapshot_scores(batch)
 
                         # PS-GRPO: inject prediction-sufficiency shaping reward per step.
                         # R38 (decoupled_advantage=True): 不注入奖励通道 —— pred 在
@@ -1416,6 +1427,24 @@ class RayPPOTrainer:
                             gigpo_enable_similarity= self.config.algorithm.gigpo.enable_similarity,
                             gigpo_similarity_thresh=self.config.algorithm.gigpo.similarity_thresh,
                         )
+
+                        # group-variance telemetry: dump per-sample rows now that the
+                        # normalized advantages exist (before the R43 filter, which
+                        # would zero all-fail-group advantages in that arm).
+                        if gv_enabled:
+                            from agent_system.telemetry.group_variance_logger import dump_group_variance_rows
+                            gv_path = dump_group_variance_rows(
+                                batch,
+                                out_dir=gv_cfg.get('dir', os.path.join(self.config.trainer.default_local_dir, 'group_variance')),
+                                update_id=self.global_steps,
+                                snap_task=gv_snap_task,
+                                snap_after_penalty=gv_snap_after_penalty,
+                                lambda_pred=pred_lambda if (pred_enabled and not pred_decoupled) else 0.0,
+                                epsilon=1e-6,
+                                run_meta={'run_id': self.config.trainer.experiment_name,
+                                          'seed': self.config.env.get('seed', 0)},
+                            )
+                            print(f'[group_variance_telemetry] wrote {gv_path}')
 
                         # R43: RAFT 式全败组过滤对照臂 (std 保持, 全败组优势置零)
                         if self.config.algorithm.get('filter_all_fail_groups', False) and all_fail_uids:
