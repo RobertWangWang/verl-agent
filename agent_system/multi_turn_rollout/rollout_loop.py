@@ -29,6 +29,37 @@ from verl.utils.dataset.rl_dataset import collate_fn
 from verl.utils.model import compute_position_id_with_mask
 
 
+def collect_prediction_info(infos):
+    """Preserve row-aligned prediction diagnostics without inventing missing data.
+
+    Older managers (including the recall/self-report controls) emit only the
+    original three fields. New boundary diagnostics are optional as a group of
+    per-field arrays, but a partially populated array is an invalid env batch.
+    """
+    if not infos or not any('pred_reward' in info for info in infos):
+        return {}
+    result = {}
+    fields = (
+        ('pred_reward', 'pred_rewards', np.float32),
+        ('pred_accuracy', 'pred_accuracy', np.float32),
+        ('pred_parse_valid', 'pred_parse_valid', bool),
+        ('pred_phi_prev', 'pred_phi_prev', np.float32),
+        ('pred_phi_curr', 'pred_phi_curr', np.float32),
+        ('pred_raw_delta', 'pred_raw_delta', np.float32),
+        ('pred_is_first_step', 'pred_is_first_step', bool),
+        ('pred_env_step', 'pred_env_step', np.int64),
+    )
+    for source_key, batch_key, dtype in fields:
+        present = [source_key in info for info in infos]
+        if any(present):
+            if not all(present):
+                raise ValueError(f'Prediction metadata {source_key} is missing for some environment rows')
+            result[batch_key] = np.array([info[source_key] for info in infos], dtype=dtype)
+        elif source_key in ('pred_reward', 'pred_accuracy', 'pred_parse_valid'):
+            raise ValueError(f'Prediction metadata {source_key} is missing')
+    return result
+
+
 class TrajectoryCollector:
     def __init__(self, config, tokenizer: PreTrainedTokenizer, processor=None):
         """
@@ -380,10 +411,7 @@ class TrajectoryCollector:
                 batch.non_tensor_batch['is_action_valid'] = np.ones(batch_size, dtype=bool)
 
             # PS-GRPO 预测充分性字段 (docs/ps_grpo_integration_design.md §2C)
-            if 'pred_reward' in infos[0]:
-                batch.non_tensor_batch['pred_rewards'] = np.array([info['pred_reward'] for info in infos], dtype=np.float32)
-                batch.non_tensor_batch['pred_accuracy'] = np.array([info['pred_accuracy'] for info in infos], dtype=np.float32)
-                batch.non_tensor_batch['pred_parse_valid'] = np.array([info['pred_parse_valid'] for info in infos], dtype=bool)
+            batch.non_tensor_batch.update(collect_prediction_info(infos))
             if 'pred_f1_visible_objects' in infos[0]:
                 batch.non_tensor_batch['pred_f1_visible_objects'] = np.array(
                     [info['pred_f1_visible_objects'] for info in infos], dtype=np.float32)

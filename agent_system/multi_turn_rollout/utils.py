@@ -84,6 +84,11 @@ def process_image(image, max_pixels: int = 2048 * 2048, min_pixels: int = 256 * 
 
 
 def adjust_batch(config, data: DataProto, mode="copy") -> DataProto:
+    # Copies align distributed work sizes, but are not additional environment
+    # transitions. Preserve the historical weighting unless explicitly opted in.
+    mark_padding = config.algorithm.get("rebuttal", {}).get("enable", False)
+    if mark_padding:
+        data.non_tensor_batch.setdefault("optimization_padding", np.zeros(len(data), dtype=bool))
     world_size = config.trainer.n_gpus_per_node * config.trainer.nnodes
     size_divisor_rollout = config.actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu * world_size
     if config.algorithm.use_kl_in_reward or config.actor_rollout_ref.actor.use_kl_loss:
@@ -125,6 +130,8 @@ def adjust_batch(config, data: DataProto, mode="copy") -> DataProto:
         # ScienceWorld 2026-08-04). Fall back to sampling with replacement.
         dup_indices = np.random.choice(bs, to_add, replace=to_add > bs)
         dup_proto = data.select_idxs(dup_indices)
+        if mark_padding:
+            dup_proto.non_tensor_batch["optimization_padding"] = np.ones(to_add, dtype=bool)
 
         adjusted_batch = DataProto.concat([data, dup_proto])
     else:

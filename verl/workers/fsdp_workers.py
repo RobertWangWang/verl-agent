@@ -453,6 +453,21 @@ class ActorRolloutRefWorker(Worker):
                 load_format=self.config.rollout.load_format,
                 layered_summon=self.config.rollout.get('layered_summon', False),
             )
+            if self.config.get("seed") is not None and self.config.rollout.mode == "sync":
+                from verl.utils.reproducibility import derived_seed, make_device_rng_state
+
+                # TP ranks must use the same sampling stream; independent DP
+                # ranks use distinct ones. Validation never advances training's
+                # stream in this opt-in synchronous-vLLM path.
+                dp_rank = rollout_device_mesh["dp"].get_local_rank()
+                generation_seed = derived_seed(self.config.rollout.get("seed", self.config.seed), dp_rank)
+                rollout_sharding_manager.gen_random_states = make_device_rng_state(get_torch_device(), generation_seed)
+                eval_seed = self.config.get("eval_seed")
+                if eval_seed is None:
+                    eval_seed = derived_seed(self.config.seed, 1000)
+                eval_seed = derived_seed(eval_seed, dp_rank)
+                self._evaluation_rng_state = [make_device_rng_state(get_torch_device(), eval_seed)]
+                print(f"[reproducibility] generation dp_rank={dp_rank}, train_seed={generation_seed}, eval_seed={eval_seed}")
             log_gpu_memory_usage("After building sharding manager", logger=logger)
 
         elif rollout_name in ["sglang", "sglang_async"]:
@@ -504,7 +519,13 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
+        from verl.utils.reproducibility import seed_everything
         from verl.workers.actor import DataParallelPPOActor
+
+        # Model construction uses a common seed before rank-specific runtime
+        # streams are initialized. This also keeps newly initialized weights
+        # consistent across the FSDP ranks.
+        seed_everything(self.config.get("seed"))
 
         # This is used to import external_lib into the huggingface systems
         import_external_libs(self.config.model.get("external_lib", None))
@@ -597,6 +618,10 @@ class ActorRolloutRefWorker(Worker):
                 checkpoint_contents=self.config.actor.checkpoint.contents,
             )
 
+        seed_record = seed_everything(self.config.get("seed"), rank=self.rank)
+        if seed_record is not None:
+            print(f"[reproducibility] worker role={self.role}: {seed_record}")
+
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
         # Support all hardwares
@@ -652,7 +677,14 @@ class ActorRolloutRefWorker(Worker):
             "pad_token_id": self.generation_config.pad_token_id if self.generation_config is not None else self.tokenizer.pad_token_id,
         }
         prompts.meta_info.update(meta_info)
-        with self.rollout_sharding_manager:
+        from contextlib import nullcontext
+
+        from verl.utils.reproducibility import isolated_generation_rng
+
+        rng_context = nullcontext()
+        if prompts.meta_info.get("validate", False) and hasattr(self, "_evaluation_rng_state"):
+            rng_context = isolated_generation_rng(self.rollout_sharding_manager, self._evaluation_rng_state)
+        with rng_context, self.rollout_sharding_manager:
             log_gpu_memory_usage("After entering rollout sharding manager", logger=logger)
 
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)

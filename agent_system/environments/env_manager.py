@@ -166,6 +166,7 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
                 reward_mode=pred_cfg.get('reward_mode', 'potential'),
+                drop_first_reward=pred_cfg.get('drop_first_reward', False),
             )
         else:
             self.memory = SimpleMemory()
@@ -293,6 +294,11 @@ class AlfWorldEnvironmentManager(EnvironmentManagerBase):
                 pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
                 infos[i]['pred_accuracy'] = accuracy
                 infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_phi_prev'] = pred_reward.phi_prev
+                infos[i]['pred_phi_curr'] = pred_reward.prediction_accuracy
+                infos[i]['pred_raw_delta'] = pred_reward.raw_delta
+                infos[i]['pred_is_first_step'] = pred_reward.is_first_step
+                infos[i]['pred_env_step'] = pred_reward.env_step
                 infos[i]['pred_parse_valid'] = parsed is not None
                 if self.feature_protocol == 'schema':
                     # graded 探针: 开放集 visible_objects 的 F1,仅日志不计奖励 (§7.2)。
@@ -575,6 +581,7 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
                 reward_mode=pred_cfg.get('reward_mode', 'potential'),
+                drop_first_reward=pred_cfg.get('drop_first_reward', False),
             )
         else:
             self.memory = SimpleMemory()
@@ -639,6 +646,11 @@ class WebshopEnvironmentManager(EnvironmentManagerBase):
                 pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
                 infos[i]['pred_accuracy'] = accuracy
                 infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_phi_prev'] = pred_reward.phi_prev
+                infos[i]['pred_phi_curr'] = pred_reward.prediction_accuracy
+                infos[i]['pred_raw_delta'] = pred_reward.raw_delta
+                infos[i]['pred_is_first_step'] = pred_reward.is_first_step
+                infos[i]['pred_env_step'] = pred_reward.env_step
                 infos[i]['pred_parse_valid'] = parsed is not None
                 if self.collect_gold:
                     # S6/W05: 与验证器同一套 extractors 拼事后正确 predict 串
@@ -771,6 +783,7 @@ class SciWorldEnvironmentManager(EnvironmentManagerBase):
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
                 reward_mode=pred_cfg.get('reward_mode', 'potential'),
+                drop_first_reward=pred_cfg.get('drop_first_reward', False),
             )
         else:
             self.memory = SimpleMemory()
@@ -850,6 +863,11 @@ class SciWorldEnvironmentManager(EnvironmentManagerBase):
                 pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
                 infos[i]['pred_accuracy'] = accuracy
                 infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_phi_prev'] = pred_reward.phi_prev
+                infos[i]['pred_phi_curr'] = pred_reward.prediction_accuracy
+                infos[i]['pred_raw_delta'] = pred_reward.raw_delta
+                infos[i]['pred_is_first_step'] = pred_reward.is_first_step
+                infos[i]['pred_env_step'] = pred_reward.env_step
                 infos[i]['pred_parse_valid'] = parsed is not None
                 if self.collect_gold:
                     actual_feats = self.feature_extractors[i].extract_all(
@@ -1027,6 +1045,7 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 prediction_horizon=pred_cfg.get('horizon', 1),
                 lambda_pred=1.0,
                 reward_mode=pred_cfg.get('reward_mode', 'potential'),
+                drop_first_reward=pred_cfg.get('drop_first_reward', False),
             )
         else:
             self.memory = SimpleMemory()
@@ -1080,6 +1099,11 @@ class HiddenRuleEnvironmentManager(EnvironmentManagerBase):
                 pred_reward = self.memory.compute_prediction_reward(i, self._turn, accuracy)
                 infos[i]['pred_accuracy'] = accuracy
                 infos[i]['pred_reward'] = pred_reward.shaped_reward
+                infos[i]['pred_phi_prev'] = pred_reward.phi_prev
+                infos[i]['pred_phi_curr'] = pred_reward.prediction_accuracy
+                infos[i]['pred_raw_delta'] = pred_reward.raw_delta
+                infos[i]['pred_is_first_step'] = pred_reward.is_first_step
+                infos[i]['pred_env_step'] = pred_reward.env_step
                 infos[i]['pred_parse_valid'] = parsed is not None
                 infos[i]['pred_f1_visible_objects'] = self._visible_objects_f1(
                     parsed, text_obs[i], admissible_commands[i], infos[i])
@@ -1152,6 +1176,9 @@ def make_envs(config):
         raise ValueError("config.env.rollout.n should be an integer")
     group_n = config.env.rollout.n if config.env.rollout.n > 0 else 1
     resources_per_worker = OmegaConf.to_container(config.env.resources_per_worker, resolve=True)
+    eval_seed = config.env.get('eval_seed', None)
+    if eval_seed is None:
+        eval_seed = config.env.seed + 1000
 
     if "hiddenrule" in config.env.env_name.lower():
         from agent_system.environments.env_package.hiddenrule import build_hiddenrule_envs, hiddenrule_projection
@@ -1165,7 +1192,7 @@ def make_envs(config):
         _envs = build_hiddenrule_envs(seed=config.env.seed, env_num=config.data.train_batch_size,
                                       group_n=group_n, is_train=True,
                                       resources_per_worker=resources_per_worker, env_kwargs=hr_cfg)
-        _val_envs = build_hiddenrule_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size,
+        _val_envs = build_hiddenrule_envs(seed=eval_seed, env_num=config.data.val_batch_size,
                                           group_n=1, is_train=False,
                                           resources_per_worker=resources_per_worker, env_kwargs=hr_cfg)
         projection_f = partial(hiddenrule_projection, require_think=require_think)
@@ -1176,7 +1203,7 @@ def make_envs(config):
     if "search" in config.env.env_name.lower():
         from agent_system.environments.env_package.search import build_search_envs, search_projection
         _envs = build_search_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, is_train=True, env_config=config.env)
-        _val_envs = build_search_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False, env_config=config.env)
+        _val_envs = build_search_envs(seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, is_train=False, env_config=config.env)
 
         projection_f = partial(search_projection)
         envs = SearchEnvironmentManager(_envs, projection_f, config)
@@ -1185,7 +1212,7 @@ def make_envs(config):
     elif "gym_cards" in config.env.env_name.lower():
         from agent_system.environments.env_package.gym_cards import build_gymcards_envs, gym_projection
         _envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, is_train=True, resources_per_worker=resources_per_worker)
-        _val_envs = build_gymcards_envs(env_name=config.env.env_name, seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False, resources_per_worker=resources_per_worker)
+        _val_envs = build_gymcards_envs(env_name=config.env.env_name, seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, is_train=False, resources_per_worker=resources_per_worker)
         
         projection_f = partial(gym_projection, env_name=config.env.env_name)
         envs = GymCardEnvironmentManager(_envs, projection_f, config)
@@ -1204,7 +1231,7 @@ def make_envs(config):
             'eval_dataset': config.env.alfworld.eval_dataset, # 'eval_in_distribution' or 'eval_out_of_distribution'
         }
         _envs = build_alfworld_envs(alf_config_path, config.env.seed, config.data.train_batch_size, group_n, is_train=True, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
-        _val_envs = build_alfworld_envs(alf_config_path, config.env.seed + 1000, config.data.val_batch_size, 1, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
+        _val_envs = build_alfworld_envs(alf_config_path, eval_seed, config.data.val_batch_size, 1, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
         
         projection_f = partial(
             alfworld_projection,
@@ -1223,7 +1250,7 @@ def make_envs(config):
             'search_depth': config.env.sokoban.search_depth
         }
         _envs = build_sokoban_envs(config.env.seed, config.data.train_batch_size, group_n, mode=config.env.sokoban.mode, is_train=True, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
-        _val_envs = build_sokoban_envs(config.env.seed + 1000, config.data.val_batch_size, 1, mode=config.env.sokoban.mode, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
+        _val_envs = build_sokoban_envs(eval_seed, config.data.val_batch_size, 1, mode=config.env.sokoban.mode, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
         
         projection_f = partial(sokoban_projection)
         envs = SokobanEnvironmentManager(_envs, projection_f, config)
@@ -1239,7 +1266,7 @@ def make_envs(config):
         task = sci_cfg.get('task_name', 'boil')
         simp = sci_cfg.get('simplification_str', '')
         _envs = build_sciworld_http_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, server_url=server_url, token=token, task=task, simplification=simp, split=sci_cfg.get('train_split', 'train'), is_train=True)
-        _val_envs = build_sciworld_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, task=task, simplification=simp, split=sci_cfg.get('eval_split', 'test'), is_train=False)
+        _val_envs = build_sciworld_http_envs(seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, task=task, simplification=simp, split=sci_cfg.get('eval_split', 'test'), is_train=False)
         projection_f = partial(sciworld_projection, require_think=sci_cfg.get('require_think_tags', True))
         envs = SciWorldEnvironmentManager(_envs, projection_f, config)
         val_envs = SciWorldEnvironmentManager(_val_envs, projection_f, config)
@@ -1252,7 +1279,7 @@ def make_envs(config):
             mode = 'small' if config.env.webshop.use_small else 'all'
             token = config.env.webshop.get('server_token', 'psgrpo')
             _envs = build_webshop_http_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, server_url=server_url, token=token, mode=mode, is_train=True)
-            _val_envs = build_webshop_http_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, mode=mode, is_train=False, val_goal_limit=config.env.webshop.get('val_goal_limit', None))
+            _val_envs = build_webshop_http_envs(seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, server_url=server_url, token=token, mode=mode, is_train=False, val_goal_limit=config.env.webshop.get('val_goal_limit', None))
             projection_f = partial(webshop_projection, require_think=config.env.webshop.get('require_think_tags', True))
             envs = WebshopEnvironmentManager(_envs, projection_f, config)
             val_envs = WebshopEnvironmentManager(_val_envs, projection_f, config)
@@ -1273,7 +1300,7 @@ def make_envs(config):
                     'attr_path': attr_path
                     }
         _envs = build_webshop_envs(seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, is_train=True, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
-        _val_envs = build_webshop_envs(seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
+        _val_envs = build_webshop_envs(seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, is_train=False, env_kwargs=env_kwargs, resources_per_worker=resources_per_worker)
 
         projection_f = partial(webshop_projection, require_think=config.env.webshop.get('require_think_tags', True))
         envs = WebshopEnvironmentManager(_envs, projection_f, config)
@@ -1284,7 +1311,7 @@ def make_envs(config):
     elif "appworld" in config.env.env_name.lower():
         from agent_system.environments.env_package.appworld import appworld_projection, build_appworld_envs
         _envs = build_appworld_envs(dataset_name='train', seed=config.env.seed, env_num=config.data.train_batch_size, group_n=group_n, start_server_id=0, resources_per_worker=resources_per_worker)
-        _val_envs = build_appworld_envs(dataset_name='test_normal', seed=config.env.seed + 1000, env_num=config.data.val_batch_size, group_n=1, start_server_id=config.data.train_batch_size*group_n, resources_per_worker=resources_per_worker)
+        _val_envs = build_appworld_envs(dataset_name='test_normal', seed=eval_seed, env_num=config.data.val_batch_size, group_n=1, start_server_id=config.data.train_batch_size*group_n, resources_per_worker=resources_per_worker)
         
         projection_f = partial(appworld_projection)
         envs = AppWorldEnvironmentManager(_envs, projection_f, config)

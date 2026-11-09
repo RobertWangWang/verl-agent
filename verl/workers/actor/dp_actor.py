@@ -322,6 +322,8 @@ class DataParallelPPOActor(BasePPOActor):
         multi_turn = data.meta_info.get("multi_turn", False)
 
         select_keys = ["responses", "input_ids", "attention_mask", "position_ids", "old_log_probs", "advantages"]
+        if "optimization_mask" in data.batch:
+            select_keys.append("optimization_mask")
         if multi_turn:
             select_keys.append("loss_mask")
         if self.config.use_kl_loss:
@@ -366,7 +368,9 @@ class DataParallelPPOActor(BasePPOActor):
                     responses = data["responses"]
                     response_length = responses.size(1)
                     attention_mask = data["attention_mask"]
-                    if multi_turn:
+                    if "optimization_mask" in data:
+                        response_mask = data["optimization_mask"][:, -response_length:]
+                    elif multi_turn:
                         response_mask = data["loss_mask"][:, -response_length:]
                     else:
                         response_mask = attention_mask[:, -response_length:]
@@ -386,6 +390,31 @@ class DataParallelPPOActor(BasePPOActor):
                     if entropy_coeff != 0:
                         calculate_entropy = True
                     entropy, log_prob = self._forward_micro_batch(micro_batch=data, temperature=temperature, calculate_entropy=calculate_entropy)
+
+                    loss_rows = None
+                    if "optimization_mask" in data:
+                        # Keep padding inputs for distributed forward/backward
+                        # alignment, but exclude them from every loss denominator
+                        # (including sequence means), entropy, and KL reduction.
+                        loss_rows = response_mask.bool().any(-1)
+                        if not loss_rows.any():
+                            # Other ranks still run backward for this microbatch.
+                            # Keep a differentiable zero connected to the model.
+                            (log_prob.sum() * 0.0).backward()
+                            if self.config.use_kl_loss:
+                                metrics["actor/kl_loss"] = 0.0
+                                metrics["actor/kl_coef"] = self.config.kl_loss_coef
+                            append_to_dict(metrics, {
+                                "actor/pg_loss": 0.0, "actor/pg_clipfrac": 0.0,
+                                "actor/ppo_kl": 0.0, "actor/pg_clipfrac_lower": 0.0,
+                            })
+                            continue
+                        response_mask = response_mask[loss_rows]
+                        old_log_prob = old_log_prob[loss_rows]
+                        advantages = advantages[loss_rows]
+                        log_prob = log_prob[loss_rows]
+                        if entropy is not None:
+                            entropy = entropy[loss_rows]
                     
                     loss_mode = self.config.policy_loss.get("loss_mode", "vanilla")
                     if loss_mode == "vanilla":
@@ -417,6 +446,8 @@ class DataParallelPPOActor(BasePPOActor):
 
                     if self.config.use_kl_loss:
                         ref_log_prob = data["ref_log_prob"]
+                        if loss_rows is not None:
+                            ref_log_prob = ref_log_prob[loss_rows]
                         # compute kl loss
                         kld = kl_penalty(logprob=log_prob, ref_logprob=ref_log_prob, kl_penalty=self.config.kl_loss_type)
                         kl_loss = agg_loss(loss_mat=kld, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)

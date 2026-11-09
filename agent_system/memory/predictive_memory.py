@@ -50,6 +50,10 @@ class PredictionReward:
     prediction_accuracy: float  # 预测准确率 (0-1)
     shaped_reward: float  # 整形后的奖励 (potential-based)
     component_rewards: Dict[str, float]  # 各特征维度的奖励
+    phi_prev: float = 0.0
+    raw_delta: float = 0.0  # Unweighted difference before any first-step mask.
+    is_first_step: bool = False
+    env_step: int = 0  # One-based scored step within this environment's episode.
 
 
 class PredictiveMemory(BaseMemory):
@@ -69,7 +73,8 @@ class PredictiveMemory(BaseMemory):
         prediction_horizon: int = 3,
         lambda_pred: float = 0.1,
         use_potential_shaping: bool = True,
-        reward_mode: str = None
+        reward_mode: str = None,
+        drop_first_reward: bool = False,
     ):
         """
         Args:
@@ -84,6 +89,7 @@ class PredictiveMemory(BaseMemory):
                 预测内容完全无关的均匀随机值 —— 组内方差永存。判"predictability
                 叙事 vs 纯归一化伪影": 同样致死 → 内容无关、伪影坐实; 不死 →
                 内容相关性成立)
+            drop_first_reward: 仅置零每个环境 episode 首次评分的奖励；仍更新势值
         """
         if reward_mode is None:
             reward_mode = 'potential' if use_potential_shaping else 'raw'
@@ -92,6 +98,7 @@ class PredictiveMemory(BaseMemory):
         self.lambda_pred = lambda_pred
         self.use_potential_shaping = reward_mode == 'potential'
         self.reward_mode = reward_mode
+        self.drop_first_reward = drop_first_reward
 
         # 历史数据存储 (同 SimpleMemory)
         self._data = None
@@ -104,6 +111,7 @@ class PredictiveMemory(BaseMemory):
 
         # 用于 potential-based shaping 的上一步预测准确率
         self.prev_prediction_accuracy: List[float] = []
+        self.prediction_steps: List[int] = []
         # R45: 噪声势的确定性随机流 (reset 时按 batch 重建)
         self._noise_rng = None
 
@@ -125,6 +133,7 @@ class PredictiveMemory(BaseMemory):
         self.predictions = [{} for _ in range(batch_size)]
         self.prediction_rewards = []
         self.prev_prediction_accuracy = [0.0] * batch_size
+        self.prediction_steps = [0] * batch_size
         if self.reward_mode == 'random_potential':
             import numpy as _np
             self._noise_rng = _np.random.RandomState(15485863 + batch_size)
@@ -286,18 +295,25 @@ class PredictiveMemory(BaseMemory):
             # R45: 丢弃真实准确率, 换均匀随机 Φ —— 势差结构/λ/注入路径全同,
             # 唯一差异是内容与预测无关。组内方差与 potential 模式同阶且永不归零。
             current_accuracy = float(self._noise_rng.rand())
+        prev_accuracy = self.prev_prediction_accuracy[env_idx]
+        raw_delta = current_accuracy - prev_accuracy
+        is_first_step = self.prediction_steps[env_idx] == 0
         if self.reward_mode in ('potential', 'random_potential'):
             # Potential-based shaping
-            prev_accuracy = self.prev_prediction_accuracy[env_idx]
-            shaped_reward = current_accuracy - prev_accuracy  # Φ(s_t) - Φ(s_{t-1})
+            shaped_reward = raw_delta
         elif self.reward_mode == 'delta_clip':
             # R41 进步奖励: 只奖励准确率的提升, 回落不惩罚 (clip 下界 0)。
             # 掌握后 Δ≈0、噪声负向被截 → 全败组内方差按构造归零, std 归一化无弹药可放大。
-            prev_accuracy = self.prev_prediction_accuracy[env_idx]
-            shaped_reward = min(1.0, max(0.0, current_accuracy - prev_accuracy))
+            shaped_reward = min(1.0, max(0.0, raw_delta))
         else:
             # raw: 直接使用准确率作为奖励
             shaped_reward = current_accuracy
+
+        # Do not skip scoring or the state update: otherwise the boundary is
+        # merely delayed until the next prediction. Zero accuracy also consumes
+        # the first step, and each environment has its own episode counter.
+        if self.drop_first_reward and is_first_step:
+            shaped_reward = 0.0
 
         # 加权
         weighted_reward = self.lambda_pred * shaped_reward
@@ -306,11 +322,16 @@ class PredictiveMemory(BaseMemory):
             turn=turn,
             prediction_accuracy=current_accuracy,
             shaped_reward=weighted_reward,
-            component_rewards={}  # 可选: 各特征维度的奖励
+            component_rewards={},  # 可选: 各特征维度的奖励
+            phi_prev=prev_accuracy,
+            raw_delta=raw_delta,
+            is_first_step=is_first_step,
+            env_step=self.prediction_steps[env_idx] + 1,
         )
 
         # 更新上一步准确率
         self.prev_prediction_accuracy[env_idx] = current_accuracy
+        self.prediction_steps[env_idx] += 1
 
         return reward
 
@@ -375,7 +396,8 @@ class HybridMemory(BaseMemory):
         prediction_horizon: int = 3,
         lambda_pred: float = 0.1,
         enable_prediction: bool = True,
-        reward_mode: str = None
+        reward_mode: str = None,
+        drop_first_reward: bool = False,
     ):
         """
         Args:
@@ -384,6 +406,7 @@ class HybridMemory(BaseMemory):
             lambda_pred: 预测奖励权重
             enable_prediction: 是否启用预测功能
             reward_mode: 见 PredictiveMemory.reward_mode (None = potential)
+            drop_first_reward: 见 PredictiveMemory.drop_first_reward (默认关闭)
         """
         self.history_length = history_length
         self.enable_prediction = enable_prediction
@@ -392,7 +415,8 @@ class HybridMemory(BaseMemory):
         self.memory = PredictiveMemory(
             prediction_horizon=prediction_horizon,
             lambda_pred=lambda_pred,
-            reward_mode=reward_mode
+            reward_mode=reward_mode,
+            drop_first_reward=drop_first_reward,
         )
 
     def __len__(self):

@@ -250,7 +250,7 @@ def pred_lambda_schedule(pred_reward_cfg, global_step: int, total_training_steps
     return base_lambda * ratio
 
 
-def apply_prediction_reward(data: DataProto, lambda_pred: float):
+def apply_prediction_reward(data: DataProto, lambda_pred: float, *, success_only=False, task_scores=None):
     """
     PS-GRPO: 把预测充分性 shaping 奖励逐 step 注入 (镜像 apply_invalid_action_penalty)。
 
@@ -260,26 +260,35 @@ def apply_prediction_reward(data: DataProto, lambda_pred: float):
     同时更新 GiGPO 的 step_rewards (若存在)，与 invalid penalty 的处理一致。
     """
     reward_tensor = data.batch['token_level_scores']
+    pred_rewards = torch.as_tensor(
+        np.asarray(data.non_tensor_batch['pred_rewards'], dtype=np.float32),
+        device=reward_tensor.device, dtype=reward_tensor.dtype,
+    ).clone()
+    if success_only:
+        from verl.trainer.ppo.rebuttal_integration import successful_trajectory_mask
+
+        if task_scores is None or 'traj_uid' not in data.non_tensor_batch:
+            raise ValueError("success_only requires pure task scores and trajectory IDs")
+        success = successful_trajectory_mask(task_scores, data.non_tensor_batch['traj_uid'])
+        pred_rewards *= success.to(pred_rewards.device)
+    prompt_length = data.batch['prompts'].shape[-1]
+    response_mask = data.batch['attention_mask'][:, prompt_length:].bool().to(reward_tensor.device)
+    eligible = response_mask.any(-1)
+    if 'active_masks' in data.non_tensor_batch:
+        eligible &= torch.as_tensor(np.asarray(data.non_tensor_batch['active_masks'], dtype=bool), device=eligible.device).reshape(-1)
+    if 'optimization_mask' in data.batch:
+        eligible &= data.batch['optimization_mask'].to(eligible.device).bool().any(-1)
+    injected = lambda_pred * pred_rewards * eligible
+    rows = eligible.nonzero(as_tuple=True)[0]
+    positions = torch.arange(response_mask.shape[-1], device=reward_tensor.device).expand_as(response_mask)
+    last_valid = positions.masked_fill(~response_mask, -1).max(-1).values
+    reward_tensor[rows, last_valid[rows]] += injected[rows]
     if 'step_rewards' in data.batch.keys():
-        step_rewards = data.batch['step_rewards']
-    pred_rewards = data.non_tensor_batch['pred_rewards'].astype(np.float32)
-    for i in range(len(data)):
-        data_item = data[i]  # DataProtoItem
-
-        prompt_ids = data_item.batch['prompts']
-
-        prompt_length = prompt_ids.shape[-1]
-
-        valid_response_length = data_item.batch['attention_mask'][prompt_length:].sum()
-
-        reward_tensor[i, valid_response_length - 1] += lambda_pred * float(pred_rewards[i])
-
-        if 'step_rewards' in data.batch.keys():
-            step_rewards[i] += lambda_pred * float(pred_rewards[i])
+        data.batch['step_rewards'] += injected.to(data.batch['step_rewards'].device)
 
     metrics = {
         'episode/pred_lambda': lambda_pred,
-        'episode/pred_reward_injected/mean': float(lambda_pred * pred_rewards.mean()),
+        'episode/pred_reward_injected/mean': float(injected.mean()) if len(injected) else 0.0,
     }
     return data, metrics
 
@@ -445,6 +454,18 @@ def compute_advantage(data: DataProto, adv_estimator, gamma=1.0, lam=1.0, num_re
                 kwargs.get("pf_ppo_weight_pow", 2.0),
             )
     elif adv_estimator == AdvantageEstimator.GRPO:
+        rebuttal_cfg = kwargs.get("rebuttal_cfg")
+        if rebuttal_cfg is not None and rebuttal_cfg.get("enable", False):
+            from verl.trainer.ppo.rebuttal_integration import compute_rebuttal_batch
+
+            data, diagnostics = compute_rebuttal_batch(
+                data, rebuttal_cfg, kwargs["rebuttal_task_scores"], kwargs["rebuttal_prediction_scores"],
+                norm_by_std=norm_adv_by_std_in_grpo,
+                prediction_weight=kwargs.get("rebuttal_prediction_weight", 0.0),
+                multi_turn=multi_turn, loss_agg_mode=kwargs.get("loss_agg_mode", "token-mean"),
+            )
+            data.meta_info["_rebuttal_diagnostics"] = diagnostics
+            return data
         # TODO: test on more adv estimator type
         grpo_calculation_mask = data.batch["response_mask"]
         if multi_turn:
@@ -626,6 +647,9 @@ class RayPPOTrainer:
 
     def _validate_config(self):
         config = self.config
+        from verl.trainer.ppo.rebuttal_integration import validate_rebuttal_config
+
+        validate_rebuttal_config(config)
         # number of GPUs total
         n_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
 
@@ -1282,6 +1306,10 @@ class RayPPOTrainer:
                     batch = adjust_batch(self.config, batch)
 
                     batch.batch["response_mask"] = compute_response_mask(batch)
+                    if (self.config.algorithm.get('rebuttal') or {}).get('enable', False):
+                        from verl.trainer.ppo.rebuttal_integration import set_optimization_mask
+
+                        set_optimization_mask(batch)
                     # balance the number of valid tokens on each dp rank.
                     # Note that this breaks the order of data inside the batch.
                     # Please take care when you implement group based adv computation such as GRPO and rloo
@@ -1374,7 +1402,13 @@ class RayPPOTrainer:
                         # pure-task per-sample scores before any injection.
                         gv_cfg = self.config.trainer.get('group_variance_telemetry', None)
                         gv_enabled = gv_cfg is not None and gv_cfg.get('enable', False)
-                        if gv_enabled:
+                        rebuttal_cfg = self.config.algorithm.get('rebuttal', None)
+                        rebuttal_enabled = rebuttal_cfg is not None and rebuttal_cfg.get('enable', False)
+                        pred_reward_cfg = self.config.algorithm.get('pred_reward', None)
+                        success_only = pred_reward_cfg is not None and pred_reward_cfg.get('success_only', False)
+                        gv_snap_task = None
+                        gv_snap_after_penalty = None
+                        if gv_enabled or rebuttal_enabled or success_only:
                             from agent_system.telemetry.group_variance_logger import snapshot_scores
                             gv_snap_task = snapshot_scores(batch)
 
@@ -1385,7 +1419,7 @@ class RayPPOTrainer:
                                                                                   )
                             metrics.update(invalid_metrics)
 
-                        if gv_enabled:
+                        if gv_enabled or rebuttal_enabled:
                             gv_snap_after_penalty = snapshot_scores(batch)
 
                         # PS-GRPO: inject prediction-sufficiency shaping reward per step.
@@ -1394,10 +1428,15 @@ class RayPPOTrainer:
                         pred_reward_cfg = self.config.algorithm.get('pred_reward', None)
                         pred_enabled = pred_reward_cfg is not None and pred_reward_cfg.get('enable', False) \
                             and 'pred_rewards' in batch.non_tensor_batch
+                        if rebuttal_enabled and pred_reward_cfg is not None and pred_reward_cfg.get('enable', False) and not pred_enabled:
+                            raise ValueError("Prediction reward enabled but rollout has no pred_rewards")
                         pred_decoupled = bool(pred_enabled and pred_reward_cfg.get('decoupled_advantage', False))
+                        pred_lambda = 0.0
                         if pred_enabled and not pred_decoupled:
                             pred_lambda = pred_lambda_schedule(pred_reward_cfg, self.global_steps, self.total_training_steps)
-                            batch, pred_metrics = apply_prediction_reward(batch, lambda_pred=pred_lambda)
+                            batch, pred_metrics = apply_prediction_reward(
+                                batch, lambda_pred=pred_lambda, success_only=success_only, task_scores=gv_snap_task,
+                            )
                             metrics.update(pred_metrics)
 
                         # compute rewards. apply_kl_penalty if available
@@ -1426,7 +1465,13 @@ class RayPPOTrainer:
                             gigpo_mode=self.config.algorithm.gigpo.mode,
                             gigpo_enable_similarity= self.config.algorithm.gigpo.enable_similarity,
                             gigpo_similarity_thresh=self.config.algorithm.gigpo.similarity_thresh,
+                            rebuttal_cfg=rebuttal_cfg,
+                            rebuttal_task_scores=gv_snap_task,
+                            rebuttal_prediction_scores=(snapshot_scores(batch) - gv_snap_after_penalty) if rebuttal_enabled else None,
+                            rebuttal_prediction_weight=pred_lambda,
+                            loss_agg_mode=self.config.actor_rollout_ref.actor.loss_agg_mode,
                         )
+                        rebuttal_diagnostics = batch.meta_info.pop('_rebuttal_diagnostics', None)
 
                         # group-variance telemetry: dump per-sample rows now that the
                         # normalized advantages exist (before the R43 filter, which
@@ -1440,9 +1485,15 @@ class RayPPOTrainer:
                                 snap_task=gv_snap_task,
                                 snap_after_penalty=gv_snap_after_penalty,
                                 lambda_pred=pred_lambda if (pred_enabled and not pred_decoupled) else 0.0,
-                                epsilon=1e-6,
+                                epsilon=float(rebuttal_cfg.get('epsilon', 1e-6)) if rebuttal_enabled else 1e-6,
                                 run_meta={'run_id': self.config.trainer.experiment_name,
-                                          'seed': self.config.env.get('seed', 0)},
+                                          'seed': self.config.trainer.get('seed') if self.config.trainer.get('seed') is not None else self.config.env.get('seed', 0),
+                                          'estimator': rebuttal_cfg.get('estimator', 'step') if rebuttal_enabled else 'legacy_step',
+                                          'norm_by_std': norm_adv_by_std_in_grpo,
+                                          'success_only': success_only,
+                                          'loss_agg_mode': self.config.actor_rollout_ref.actor.loss_agg_mode,
+                                          'rms_weighting': 'nominal_full_batch'},
+                                diagnostics=rebuttal_diagnostics,
                             )
                             print(f'[group_variance_telemetry] wrote {gv_path}')
 

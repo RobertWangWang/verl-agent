@@ -64,6 +64,21 @@ class TaskRunner:
         pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
         OmegaConf.resolve(config)
 
+        # Explicit research seeding is opt-in; old runs with seed=None retain
+        # their original initialization behavior.
+        from verl.utils.reproducibility import seed_everything
+
+        seed_record = seed_everything(config.trainer.get("seed"))
+        if seed_record is not None:
+            import json
+            from pathlib import Path
+
+            output_dir = Path(config.trainer.default_local_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            OmegaConf.save(config, output_dir / "resolved_config.yaml", resolve=True)
+            (output_dir / "driver_seed.json").write_text(json.dumps(seed_record, indent=2) + "\n")
+            print(f"[reproducibility] driver: {seed_record}")
+
         # download the checkpoint from hdfs
         local_path = copy_to_local(config.actor_rollout_ref.model.path, use_shm=config.actor_rollout_ref.model.get("use_shm", False))
 

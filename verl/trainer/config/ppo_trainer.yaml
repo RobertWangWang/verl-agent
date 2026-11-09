@@ -1,4 +1,5 @@
 data:
+  seed: 1 # existing dataloader default; rebuttal runs set all RNG streams explicitly
   tokenizer: null
   use_shm: False
   train_files: ~/data/rlhf/gsm8k/train.parquet
@@ -25,6 +26,8 @@ data:
       name: null
 
 actor_rollout_ref:
+  seed: ${trainer.seed} # null preserves original worker RNG behavior
+  eval_seed: ${env.eval_seed}
   hybrid_engine: True
   model:
     path: ~/models/deepseek-llm-7b-chat
@@ -101,6 +104,7 @@ actor_rollout_ref:
     log_prob_max_token_len_per_gpu: ${actor_rollout_ref.actor.ppo_max_token_len_per_gpu}
     ulysses_sequence_parallel_size: ${actor_rollout_ref.actor.ulysses_sequence_parallel_size} # sp size
   rollout:
+    seed: 0
     name: vllm
     mode: sync # sync: LLM, async: AsyncLLM
     chat_scheduler: null # async chat scheduler, e.g examples.ppo_trainer.naive_chat_scheduler.NaiveChatCompletionScheduler
@@ -232,6 +236,11 @@ custom_reward_function:
   name: compute_score
 
 algorithm:
+  rebuttal:
+    enable: False # disabled runs retain the legacy estimator
+    estimator: step # step | trajectory (Eq.8) | gdpo (step-sample adaptation)
+    epsilon: 1.0e-6
+    match_advantage_rms: False # one common scale across the batch, step+std only
   gamma: 1.0
   lam: 1.0
   adv_estimator: gae
@@ -255,6 +264,7 @@ algorithm:
   filter_all_fail_groups: False # R43 过滤对照臂: std 保持原样, 全败组样本优势置零 (RAFT 式过滤归因判别; 与 batch/all_fail_group_frac 指标配套)
   pred_reward: # PS-GRPO 预测充分性奖励注入 (docs/ps_grpo_integration_design.md §2D)
     enable: False # 需同时开启 env.<env>.prediction.enable 采集才生效
+    success_only: False # mask only prediction rewards using pure trajectory task outcomes
     lambda: 0.1 # 注入系数 λ; 总奖励 = 任务奖励 + λ·r_pred (r_pred 逐 step 注入)
     decoupled_advantage: False # R38 (GDPO 式): pred 通道独立组归一化后按 λ 叠加进优势, 不进奖励通道 —— 封顶劫持放大 (arXiv:2601.05242); 仅支持 grpo
     anneal: # λ 退火，后期回归任务奖励主导 (研究计划 §4.3)
@@ -275,6 +285,10 @@ algorithm:
     max_num_gen_batches: 10
 
 trainer:
+  seed: null # null preserves legacy RNG behavior
+  group_variance_telemetry:
+    enable: False
+    dir: ${trainer.default_local_dir}/group_variance
   balance_batch: True
   total_epochs: 30
   total_training_steps: null
@@ -310,6 +324,7 @@ ray_init:
 env:
   env_name: alfworld/AlfredTWEnv
   seed: 0
+  eval_seed: null # null retains seed+1000
   max_steps: 50
   history_length: 2
   resources_per_worker: # resources for each env worker
@@ -321,6 +336,7 @@ env:
     eval_dataset: eval_in_distribution
     require_think_tags: True # Qwen3 + enable_thinking=False 时设 False (chat template 预注入空 think 块,response 不可能再含 <think>)
     prediction: # PS-GRPO 预测充分性采集 (docs/ps_grpo_integration_design.md)
+      drop_first_reward: False # keep first-step scoring, suppress only its shaping reward
       enable: False # 开启后使用带 <predict> 块的 prompt 并采集 pred_accuracy/pred_reward 指标 (不注入奖励)
       horizon: 1 # 预测步长 k; 目前仅支持 1
       feature_protocol: schema # schema (v0.2 任务无关协议,默认) | task_targets (v0.1 兼容,复现 pilot 用)
@@ -353,6 +369,7 @@ env:
     coverage_level: 1.0 # 特征覆盖度档位 (主图 1): <1.0 时 env 侧贪心校准字段 mask 裁剪预测目标 Φ, 实测 C 走 episode/phi_coverage/mean
     require_think_tags: True # Qwen3 + enable_thinking=False 时设 False
     prediction: # PS-GRPO 预测充分性采集 (与 env.alfworld.prediction 同构; HRG 仅 schema 协议)
+      drop_first_reward: False # keep first-step scoring, suppress only its shaping reward
       enable: False
       horizon: 1
       feature_weights: null # null = features.py 默认 (location 0.5 / objects_visible 0.5)
@@ -374,6 +391,7 @@ env:
     eval_split: test
     require_think_tags: True   # Qwen3 + enable_thinking=False 场景置 False
     prediction:
+      drop_first_reward: False # keep first-step scoring, suppress only its shaping reward
       enable: False        # SW02: <predict> 块 + 规则验证 pred_reward (Φ_sciworld)
       horizon: 1
       reward_mode: potential
@@ -386,6 +404,7 @@ env:
     server_token: psgrpo
     require_think_tags: True   # set False for Qwen3 + enable_thinking=False (empty <think> pre-injected, response never contains tags)
     prediction:
+      drop_first_reward: False # keep first-step scoring, suppress only its shaping reward
       enable: False          # W02/W04: <predict> block + rule-verified pred_reward (Φ_webshop)
       horizon: 1
       reward_mode: potential # potential | direct
