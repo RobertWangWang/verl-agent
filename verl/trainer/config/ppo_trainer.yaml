@@ -326,6 +326,7 @@ env:
   seed: 0
   eval_seed: null # null retains seed+1000
   max_steps: 50
+  log_progress: false # Log rollout stages and generation latency without prompt content.
   history_length: 2
   resources_per_worker: # resources for each env worker
     num_cpus: 0.1

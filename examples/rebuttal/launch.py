@@ -182,6 +182,7 @@ def build_run(name, seed, args):
         "env.seed": seed,
         "env.eval_seed": eval_seed,
         "env.max_steps": 50,
+        "env.log_progress": True,
         "env.rollout.n": 4,
         "env.resources_per_worker.num_cpus": 0.1,
         "env.alfworld.eval_dataset": "eval_in_distribution",
@@ -221,7 +222,7 @@ def build_run(name, seed, args):
         "trainer.logger=[console]",
         "env.alfworld.prediction.feature_weights={location_change:0.5,objects_visible:0.5,visible_objects:0.0,action_available:0.0,receptacle_state:0.0,task_progress:0.0}",
     ]
-    env = {"CUDA_VISIBLE_DEVICES": args.gpus, "PYTHONHASHSEED": str(seed), "OMP_NUM_THREADS": str(args.threads), "MKL_NUM_THREADS": str(args.threads), "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
+    env = {"CUDA_VISIBLE_DEVICES": args.gpus, "PYTHONHASHSEED": str(seed), "PYTHONUNBUFFERED": "1", "OMP_NUM_THREADS": str(args.threads), "MKL_NUM_THREADS": str(args.threads), "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
     argv = [sys.executable, "-m", "verl.trainer.main_ppo", *overrides]
     prepare_argv = [sys.executable, "-m", "examples.rebuttal.prepare", "--output-dir", str(root / "data"), "--train-size", "8", "--val-size", "32"]
     return {

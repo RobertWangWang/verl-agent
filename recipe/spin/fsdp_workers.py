@@ -214,6 +214,10 @@ class SPINRolloutRefWorker(ActorRolloutRefWorker):
         Calls self.actor.update_policy which now contains DPO logic based
         on pre-calculated log probabilities.
         """
+        # This path bypasses the base worker's update_actor invalidation.
+        invalidate_weights = getattr(getattr(self, "rollout_sharding_manager", None), "invalidate_weights", None)
+        if invalidate_weights is not None:
+            invalidate_weights()
         # Support all hardwares
         data = data.to(torch.cuda.current_device())
 

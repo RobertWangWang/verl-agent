@@ -107,8 +107,22 @@ class FSDPVLLMShardingManager(BaseShardingManager):
             self.gen_random_states = None
 
         self.base_sync_done: bool = 'dummy' not in load_format
+        # sleep(level=1) preserves the current vLLM weights in its CPU backup.
+        # Environment steps can reuse them until an actor update or checkpoint
+        # load invalidates the copy. LoRA and deferred async engines keep their
+        # existing synchronization behavior.
+        self._cache_weights = (
+            inference_engine is not None
+            and is_version_ge(pkg='vllm', minver='0.7.3')
+            and not isinstance(self.module._fsdp_wrapped_module, PeftModel)
+        )
+        self._weights_synced = False
         if is_version_ge(pkg='vllm', minver='0.7.3'):
             VLLMHijack.hijack()
+
+    def invalidate_weights(self):
+        """Require a fresh actor-to-rollout copy before the next generation."""
+        self._weights_synced = False
 
     @GPUMemoryLogger(role="fsdp vllm sharding_manager", logger=logger)
     def __enter__(self):
@@ -166,44 +180,53 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         # vllm: https://github.com/vllm-project/vllm/blob/v0.7.3/vllm/device_allocator/cumem.py#L103
         get_torch_device().empty_cache()
 
-        log_gpu_memory_usage("Before state_dict() in sharding manager memory", logger=logger)
-        if self.offload_param:
-            load_fsdp_model_to_gpu(self.module)
-
-        peft_config = None
-        if isinstance(self.module._fsdp_wrapped_module, PeftModel):
-            peft_config = self.module._fsdp_wrapped_module.peft_config.get('default', None)
-            params = __collect_lora_params()
-        else:
-            params = self.module.state_dict()
-        log_gpu_memory_usage("After state_dict() in sharding manager memory", logger=logger)
-
-        # Copy, not share memory
-        load_format = "hf" if self.full_params else "dtensor"
-
-        if vllm_version in (
-            "0.5.4",
-            "0.6.3",
-        ):
-            self.inference_engine.sync_model_weights(params, load_format=load_format)
-            log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
-            del params
-        else:
+        reuse_weights = self._cache_weights and self._weights_synced
+        # Leave the cache invalid if exporting, restoring, or loading fails.
+        self._weights_synced = False
+        if reuse_weights:
             if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                self.inference_engine.wake_up(tags=["weights"])
+                self.inference_engine.wake_up(tags=["weights", "kv_cache"])
             else:
                 self.inference_engine.wake_up()
-
-            # update model params
-            self.update_params(params, peft_config=peft_config)
-            log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
-            del params
+        else:
+            log_gpu_memory_usage("Before state_dict() in sharding manager memory", logger=logger)
             if self.offload_param:
-                offload_fsdp_model_to_cpu(self.module)
-            get_torch_device().empty_cache()
+                load_fsdp_model_to_gpu(self.module)
 
-            if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
-                self.inference_engine.wake_up(tags=["kv_cache"])
+            peft_config = None
+            if isinstance(self.module._fsdp_wrapped_module, PeftModel):
+                peft_config = self.module._fsdp_wrapped_module.peft_config.get('default', None)
+                params = __collect_lora_params()
+            else:
+                params = self.module.state_dict()
+            log_gpu_memory_usage("After state_dict() in sharding manager memory", logger=logger)
+
+            # Copy, not share memory
+            load_format = "hf" if self.full_params else "dtensor"
+
+            if vllm_version in (
+                "0.5.4",
+                "0.6.3",
+            ):
+                self.inference_engine.sync_model_weights(params, load_format=load_format)
+                log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
+                del params
+            else:
+                if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
+                    self.inference_engine.wake_up(tags=["weights"])
+                else:
+                    self.inference_engine.wake_up()
+
+                # update model params
+                self.update_params(params, peft_config=peft_config)
+                log_gpu_memory_usage("After sync model weights in sharding manager", logger=logger)
+                del params
+                if self.offload_param:
+                    offload_fsdp_model_to_cpu(self.module)
+                get_torch_device().empty_cache()
+
+                if "tags" in inspect.signature(self.inference_engine.wake_up).parameters:
+                    self.inference_engine.wake_up(tags=["kv_cache"])
 
         log_gpu_memory_usage("After del state_dict and empty_cache in sharding manager", logger=logger)
 
@@ -211,9 +234,12 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         if self.device_mesh is not None:
             self.torch_random_states = get_torch_device().get_rng_state()
             get_torch_device().set_rng_state(self.gen_random_states)
+        self._weights_synced = self._cache_weights
 
     @GPUMemoryLogger(role="fsdp vllm sharding_manager", logger=logger)
     def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is not None:
+            self.invalidate_weights()
         # TODO(ZSL): check this
         if vllm_version in (
             "0.5.4",
@@ -221,7 +247,11 @@ class FSDPVLLMShardingManager(BaseShardingManager):
         ):
             self.inference_engine.offload_model_weights()
         else:
-            self.inference_engine.sleep(level=1)
+            try:
+                self.inference_engine.sleep(level=1)
+            except BaseException:
+                self.invalidate_weights()
+                raise
 
         self.module.train()
 

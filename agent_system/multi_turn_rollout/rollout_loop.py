@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 import uuid
 from typing import Dict, List
 
@@ -338,6 +339,10 @@ class TrajectoryCollector:
         """
 
         batch_size = len(gen_batch.batch)
+        log_progress = getattr(self.config.env, 'log_progress', False)
+        if log_progress:
+            phase = 'validation' if gen_batch.meta_info.get('validate', False) else 'train'
+            print(f'[rollout] phase={phase} start batch_size={batch_size} max_steps={self.config.env.max_steps}', flush=True)
 
         # Initial observations from the environment
         obs, infos = envs.reset(kwargs=gen_batch.non_tensor_batch.pop('env_kwargs', None))
@@ -385,7 +390,12 @@ class TrajectoryCollector:
 
             # pad to be divisible by dp_size
             batch_input_padded, pad_size = pad_dataproto_to_divisor(batch_input, actor_rollout_wg.world_size)
+            if log_progress:
+                generation_start = time.monotonic()
+                print(f'[rollout] phase={phase} step={_step + 1}/{self.config.env.max_steps} active={int(active_masks.sum())}/{batch_size} generate.begin', flush=True)
             batch_output_padded = actor_rollout_wg.generate_sequences(batch_input_padded)
+            if log_progress:
+                print(f'[rollout] phase={phase} step={_step + 1}/{self.config.env.max_steps} generate.end elapsed_seconds={time.monotonic() - generation_start:.2f}', flush=True)
             # # unpad
             batch_output = unpad_dataproto(batch_output_padded, pad_size=pad_size)
 
@@ -444,6 +454,8 @@ class TrajectoryCollector:
 
             # Update done states
             is_done = np.logical_or(is_done, dones)
+            if log_progress:
+                print(f'[rollout] phase={phase} step={_step + 1}/{self.config.env.max_steps} env.step.done done={int(is_done.sum())}/{batch_size}', flush=True)
                 
             # Update observations for next step
             obs = next_obs

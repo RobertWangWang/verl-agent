@@ -624,6 +624,10 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
+        # Invalidate before mutation: failed updates can still change weights.
+        invalidate_weights = getattr(getattr(self, "rollout_sharding_manager", None), "invalidate_weights", None)
+        if invalidate_weights is not None:
+            invalidate_weights()
         # Support all hardwares
         data = data.to(get_torch_device().current_device())
 
@@ -819,6 +823,9 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def load_checkpoint(self, local_path, hdfs_path=None, del_local_after_load=False):
+        invalidate_weights = getattr(getattr(self, "rollout_sharding_manager", None), "invalidate_weights", None)
+        if invalidate_weights is not None:
+            invalidate_weights()
         if self._is_offload_param:
             load_fsdp_model_to_gpu(self.actor_module_fsdp)
 
