@@ -209,7 +209,7 @@ def build_run(name, seed, args):
         "trainer.total_epochs": steps,
         "trainer.total_training_steps": steps,
         "trainer.test_freq": 1 if args.smoke_steps else 5,
-        "trainer.save_freq": 1 if args.smoke_steps else (25 if arm.model == "4b" else 20),
+        "trainer.save_freq": 1 if args.smoke_steps else 25,
         "trainer.val_before_train": True,
         "trainer.max_actor_ckpt_to_keep": 2,
         "ray_init.num_cpus": args.num_cpus,

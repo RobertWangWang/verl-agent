@@ -34,6 +34,7 @@ def test_full_matrix_has_distinct_paths_and_seeds(argv):
         assert c["env"]["rollout"]["n"] == 4
         assert c["trainer"]["total_training_steps"] == (150 if run["arm"].startswith("A") else 60)
         assert c["trainer"]["resume_mode"] == "disable"
+        assert c["trainer"]["save_freq"] == 25
         assert c["data"]["seed"] == c["env"]["seed"] == c["trainer"]["seed"] == seed
         assert c["actor_rollout_ref"]["seed"] == c["actor_rollout_ref"]["rollout"]["seed"] == seed
         assert c["actor_rollout_ref"]["eval_seed"] == c["env"]["eval_seed"] == seed + 1000
