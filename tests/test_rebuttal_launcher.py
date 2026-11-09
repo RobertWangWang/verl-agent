@@ -115,11 +115,12 @@ def test_execute_orders_prepare_then_train_and_refuses_reuse(argv, monkeypatch):
         calls.append((command, kwargs))
 
     monkeypatch.setattr(launch.subprocess, "run", fake_run)
-    launch.execute_run(run, {"test": True})
+    launch.execute_run(run, {"test": True, "run_count": 3})
     assert [call[0] for call in calls] == [run["prepare_argv"], run["train_argv"]]
     assert calls[1][1]["env"]["CUDA_VISIBLE_DEVICES"] == "0,1"
     assert "RAY_ADDRESS" not in calls[1][1]["env"]
     assert json.loads((launch.Path(run["paths"]["root"]) / "status.json").read_text())["status"] == "completed"
+    assert json.loads((launch.Path(run["paths"]["root"]) / "manifest.json").read_text())["run_count"] == 1
     with pytest.raises(FileExistsError):
         launch.execute_run(run, {})
 

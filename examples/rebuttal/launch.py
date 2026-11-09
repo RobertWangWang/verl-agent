@@ -253,7 +253,7 @@ def evidence():
     files = {}
     for directory in ("verl", "agent_system", "gigpo", "examples/rebuttal"):
         for path in sorted((REPO_ROOT / directory).rglob("*")):
-            if path.is_file() and path.suffix in {".py", ".yaml", ".yml", ".json"}:
+            if path.is_file() and path.suffix in {".py", ".sh", ".yaml", ".yml", ".json"}:
                 files[str(path.relative_to(REPO_ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
     plan = REPO_ROOT / "rebuttal最大实验覆盖.md"
     versions = {}
@@ -272,7 +272,7 @@ def execute_run(run, manifest):
     env = os.environ.copy()
     env.pop("RAY_ADDRESS", None)
     env.update(run["environment"])
-    run_manifest = {**manifest, "runs": [run]}
+    run_manifest = {**manifest, "run_count": 1, "runs": [run]}
     (root / "manifest.json").write_text(json.dumps(run_manifest, indent=2, ensure_ascii=False) + "\n")
     status = {"status": "running", "started_at": datetime.now(timezone.utc).isoformat()}
     status_path = root / "status.json"
