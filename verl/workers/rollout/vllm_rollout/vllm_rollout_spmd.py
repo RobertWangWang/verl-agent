@@ -36,12 +36,13 @@ import numpy as np
 import torch
 import torch.distributed
 from omegaconf import DictConfig, OmegaConf, ListConfig
+from packaging.version import Version
 from tensordict import TensorDict
 from vllm import LLM, SamplingParams
 from vllm.distributed import parallel_state as vllm_ps
 
 from verl import DataProto
-from verl.third_party.vllm import vllm_version
+from verl.third_party.vllm import package_version, vllm_version
 from verl.utils.debug import GPUMemoryLogger
 from verl.utils.torch_functional import get_response_mask, pad_2d_list_to_length
 from verl.workers.rollout.base import BaseRollout
@@ -104,7 +105,11 @@ class vLLMRollout(BaseRollout):
         """
         super().__init__()
         self.config = config
-        assert not (not config.enforce_eager and config.free_cache_engine), "disable CUDA graph (enforce_eager = False) if free cache engine"
+        # Legacy cache-engine recreation invalidates CUDA graph pointers. Since
+        # v0.7.3, sleep mode unmaps physical memory but preserves the virtual
+        # addresses that are restored by wake_up, so CUDA graphs remain valid.
+        if not config.enforce_eager and config.free_cache_engine and Version(package_version) < Version("0.7.3"):
+            raise ValueError("CUDA graphs with free_cache_engine require vLLM >= 0.7.3 sleep mode; use enforce_eager=True or free_cache_engine=False on older versions")
 
         tensor_parallel_size = self.config.get("tensor_model_parallel_size", 1)
         assert tensor_parallel_size <= torch.distributed.get_world_size(), "tensor parallel size should be less than or equal to the world size"

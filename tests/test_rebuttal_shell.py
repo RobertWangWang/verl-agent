@@ -51,12 +51,14 @@ def test_smoke_shell_from_another_directory_defaults_to_two_updates(settings, tm
     assert config["data"]["train_batch_size"] == 8
     assert config["data"]["val_batch_size"] == 32
     assert config["env"]["rollout"]["n"] == 4
+    assert config["actor_rollout_ref"]["rollout"]["enforce_eager"] is False
+    assert config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] == 8
     assert not (output / run["run_id"]).exists()
 
 
 def test_train_shell_keeps_each_arm_seed_distinct_without_execution(settings, tmp_path):
     output, manifest, argv = settings
-    result = shell("run_train.sh", argv + ["--arms", "A00,B02", "--seeds", "0,2", "--dry-run"], tmp_path)
+    result = shell("run_train.sh", argv + ["--arms", "A00,B02", "--seeds", "0,2", "--dry-run", "--enforce-eager"], tmp_path)
     assert result.returncode == 0, result.stderr
     plan = json.loads(manifest.read_text())
     assert plan["dry_run"]
@@ -65,6 +67,34 @@ def test_train_shell_keeps_each_arm_seed_distinct_without_execution(settings, tm
         config = run["resolved_config"]
         assert config["trainer"]["total_training_steps"] == (150 if run["arm"].startswith("A") else 60)
         assert config["trainer"]["resume_mode"] == "disable"
+        assert config["actor_rollout_ref"]["rollout"]["enforce_eager"] is True
+        assert not (output / run["run_id"]).exists()
+
+
+def test_all_serial_wrapper_uses_paper_seeds_and_eight_gpu_defaults(settings, tmp_path):
+    output, manifest, argv = settings
+    argv = argv.copy()
+    gpu_arg = argv.index("--gpus")
+    del argv[gpu_arg:gpu_arg + 2]
+    result = shell("run_all_serial.sh", argv, tmp_path)
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(manifest.read_text())
+    assert plan["dry_run"]
+    arms = [f"A{i:02d}" for i in range(11)] + [f"B{i:02d}" for i in range(6)]
+    assert [run["run_id"] for run in plan["runs"]] == [f"{arm}_s{seed}" for arm in arms for seed in (0, 42, 96)]
+    for run in plan["runs"]:
+        config = run["resolved_config"]
+        assert run["environment"]["CUDA_VISIBLE_DEVICES"] == "0,1,2,3,4,5,6,7"
+        assert config["trainer"]["n_gpus_per_node"] == 8
+        assert config["actor_rollout_ref"]["model"]["path"] == str(tmp_path / "model with spaces")
+        assert config["actor_rollout_ref"]["rollout"]["enforce_eager"] is False
+        assert config["actor_rollout_ref"]["rollout"]["free_cache_engine"] is True
+        assert config["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] == 0.6
+        assert config["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] == 8
+        assert config["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] == 16
+        assert config["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] == 16
+        assert config["trainer"]["total_training_steps"] == (150 if run["arm"].startswith("A") else 60)
+        assert run["paths"]["root"] == str(output / run["run_id"])
         assert not (output / run["run_id"]).exists()
 
 
@@ -131,5 +161,5 @@ def test_train_rejects_conflicting_modes_before_execution(settings, monkeypatch,
 
 def test_shell_sources_are_in_reproducibility_manifest():
     hashes = launch.evidence()["source_sha256"]
-    for name in ("run_smoke.sh", "run_train.sh"):
+    for name in ("run_smoke.sh", "run_train.sh", "run_all_serial.sh"):
         assert "examples/rebuttal/" + name in hashes

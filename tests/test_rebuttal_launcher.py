@@ -39,6 +39,12 @@ def test_full_matrix_has_distinct_paths_and_seeds(argv):
         assert c["actor_rollout_ref"]["eval_seed"] == c["env"]["eval_seed"] == seed + 1000
         assert c["actor_rollout_ref"]["rollout"]["temperature"] == 1.0
         assert c["actor_rollout_ref"]["rollout"]["val_kwargs"]["temperature"] == 0.4
+        assert c["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] == 8
+        assert c["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] == 16
+        assert c["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] == 16
+        assert c["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] == 0.6
+        assert c["actor_rollout_ref"]["rollout"]["enforce_eager"] is False
+        assert c["actor_rollout_ref"]["rollout"]["free_cache_engine"] is True
         assert c["algorithm"]["rebuttal"]["enable"]
         assert c["env"]["alfworld"]["prediction"]["feature_weights"]["location_change"] == 0.5
         assert c["ray_init"]["address"] == "local"
@@ -131,6 +137,25 @@ def test_smoke_has_separate_identity_and_save_validation(argv):
     assert run["run_id"] == "A01_s0_smoke2"
     assert run["resolved_config"]["trainer"]["total_training_steps"] == 2
     assert run["resolved_config"]["trainer"]["save_freq"] == run["resolved_config"]["trainer"]["test_freq"] == 1
+
+
+def test_runtime_overrides_are_rendered_without_changing_experiment(argv):
+    args = launch.parser().parse_args(argv + [
+        "--micro-batch", "4", "--logprob-micro-batch", "8",
+        "--gpu-memory-utilization", "0.5", "--enforce-eager",
+    ])
+    run = launch.build_run("A01", 42, args)
+    c = run["resolved_config"]
+    assert c["actor_rollout_ref"]["actor"]["ppo_micro_batch_size_per_gpu"] == 4
+    assert c["actor_rollout_ref"]["rollout"]["log_prob_micro_batch_size_per_gpu"] == 8
+    assert c["actor_rollout_ref"]["ref"]["log_prob_micro_batch_size_per_gpu"] == 8
+    assert c["actor_rollout_ref"]["rollout"]["gpu_memory_utilization"] == 0.5
+    assert c["actor_rollout_ref"]["rollout"]["enforce_eager"] is True
+    assert "actor_rollout_ref.rollout.enforce_eager=true" in run["train_argv"]
+    assert c["algorithm"]["pred_reward"]["enable"] is True
+    assert c["data"]["train_batch_size"] == 8
+    assert c["env"]["rollout"]["n"] == 4
+    assert c["trainer"]["seed"] == 42
 
 
 def test_seed_repeats_all_cpu_sources_and_distinguishes_ranks(monkeypatch):

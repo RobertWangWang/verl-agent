@@ -171,7 +171,7 @@ def build_run(name, seed, args):
         "actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu": args.logprob_micro_batch,
         "actor_rollout_ref.rollout.gpu_memory_utilization": args.gpu_memory_utilization,
         "actor_rollout_ref.rollout.enable_chunked_prefill": False,
-        "actor_rollout_ref.rollout.enforce_eager": True,
+        "actor_rollout_ref.rollout.enforce_eager": args.enforce_eager,
         "actor_rollout_ref.rollout.free_cache_engine": True,
         "actor_rollout_ref.rollout.temperature": 1.0,
         "actor_rollout_ref.rollout.val_kwargs.temperature": 0.4,
@@ -302,9 +302,12 @@ def parser():
     p.add_argument("--gpus", required=True, help="explicit CUDA indices for EACH rendered run, e.g. 0,1; does not schedule parallel jobs")
     p.add_argument("--num-cpus", default=16, type=int)
     p.add_argument("--threads", default=2, type=int)
-    p.add_argument("--micro-batch", default=4, type=int)
-    p.add_argument("--logprob-micro-batch", default=8, type=int)
-    p.add_argument("--gpu-memory-utilization", default=0.5, type=float)
+    # Match the legacy 4B/8-GPU recipe's runtime settings; the comparison
+    # protocol above still uses the paper's 8 x 4 trajectories and val32.
+    p.add_argument("--micro-batch", default=8, type=int)
+    p.add_argument("--logprob-micro-batch", default=16, type=int)
+    p.add_argument("--gpu-memory-utilization", default=0.6, type=float)
+    p.add_argument("--enforce-eager", action="store_true", help="disable CUDA Graph for backend troubleshooting; default uses CUDA Graph as in the legacy 4B/8-GPU recipe")
     p.add_argument("--smoke-steps", type=int, help="1-5 updates with validation/save every update; separate smoke directory, never a formal result")
     p.add_argument("--manifest", type=Path, help="write full JSON manifest to a NEW file; otherwise print JSON to stdout")
     p.add_argument("--execute", action="store_true", help="prepare data and execute exactly one selected arm/seed; default only renders")
